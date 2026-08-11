@@ -156,30 +156,36 @@ readable as a set.
 
 ## 5. Threading and data flow
 
-One UI thread. One I/O thread per link. No shared mutable state — everything
-crosses on a queue.
+**Single-threaded, with non-blocking I/O polled once per frame.** This is a
+change from the threaded design first sketched here, made during
+implementation and kept deliberately:
 
 ```
-  serial thread ──► rx ring ──►┐
-                               ├──► app thread (pumps queues, owns state)
-  udp thread ──────► reply q ─►┘        │
-        ▲                               └──► state snapshot (double-buffered)
-        │                                             │
-        └──────────── cmd queues ◄──────────── UI thread (render, 60 Hz)
+   frame loop
+     ├── sv_ui_input_begin / SDL events / sv_ui_input_end
+     ├── sv_app_poll()      ── drain serial (non-blocking) ──► parse
+     │                      ── drain UDP    (non-blocking) ──► winch replies
+     │                      ── advance the job state machine
+     ├── sv_ui_frame()      ── read app state directly, emit widgets
+     └── render, present
 ```
 
-- Queues are fixed-capacity SPSC rings, allocated once at startup. A full queue
-  drops the oldest telemetry frame and increments a counter shown in the status
-  bar — it never blocks and never grows.
-- The UI thread renders from a snapshot published by the app thread. A frame
-  can never observe a half-updated cast.
-- The download path is the one bulk transfer: it streams straight to a temp
-  file on the I/O thread and only hands the UI a progress count.
+The reason: at 230400 baud a 60 Hz frame is under 400 bytes of serial data,
+and the one bulk transfer (a file download) streams straight to disk a chunk
+at a time. Threads would buy nothing measurable and would cost a class of
+race conditions this program cannot afford — the whole point of §9 is that it
+does not crash. There is no lock anywhere in the program, and no shared
+mutable state, because there is nothing to share.
 
-**Nothing blocking ever runs on the UI thread.** Not a file read, not a
-`connect()`, not a 5-second instrument timeout. This is the single rule that
-keeps the window responsive, and it is enforced by keeping SDL out of the core
-and sockets out of the UI.
+**Nothing blocking ever runs.** Every serial and socket handle is opened
+`O_NONBLOCK`, every read returns immediately, and every instrument command
+carries a deadline enforced by the poll rather than by a wait. A dead
+instrument costs one timeout, not a frozen window.
+
+The one thing this design would not survive is a link fast enough to
+outpace the frame rate — a 10 Mbit instrument, say. It does not exist here,
+and the split between `sv_app` and `plat` is where a reader thread would go
+if it ever did.
 
 ---
 

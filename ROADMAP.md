@@ -1,5 +1,9 @@
 # svpview — implementation roadmap
 
+> **Status 2026-08-11:** phases 0, 1, 4, 5 and 6 are implemented and the
+> program runs; phase 2 and 3 are implemented against the simulator and
+> await a real instrument. See CHANGELOG.md for what actually landed.
+
 Nine phases. Each ends with something runnable and tested; no phase depends on
 hardware that is not already on the bench, except where marked **HW**.
 

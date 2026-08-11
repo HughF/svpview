@@ -101,6 +101,15 @@ $PVBB,00102532,56150,50.4264,-3.6814,66.00,210118154647,0,*42
 
 Checksum: XOR of all bytes between `$` and `*`.
 
+The algorithm is confirmed — the deltas between the guide's four worked
+examples reproduce exactly — but the guide's example *text* is not
+byte-faithful (a constant 0x70 offset says characters were lost in
+transcription). svpview therefore parses a sentence whose checksum fails and
+flags it, counting the failures in the interface, rather than discarding it:
+losing a status broadcast costs the operator the deploy flag and the battery
+reading, and every field is range-checked independently anyway. Revisit once
+a real capture exists.
+
 ### Deploy flag = 0 — the four causes (§4.4)
 
 The app must name the cause, not print "not ready":
@@ -191,10 +200,22 @@ Sample record: `tick` (u32, 32 Hz), primary parameter (f32), pressure dBar
 From D0 the site info may be **Unicode** — first two bytes `0x01 0x01` mark it;
 otherwise ASCII.
 
+**Header size, confirmed.** The guide is ambiguous about what the 2-byte
+header-size field counts, but walking the field list above gives 246, 295 and
+312 bytes for the three variants — which match the totals the guide quotes
+independently (110+36+100; 145+100+50; 162+100+50). So the field counts from
+itself through the ETX inclusive, and the data begins at
+`end_of_version_string + header_size`. `tests/test_binfile.c` asserts all
+three numbers, so a mistake in the field list shows up as a failing test
+rather than as silently misread casts.
+
 **Reader rules** (`sv_binfile.c`): find the CRLF-terminated version string by
-scanning with a bound, read the header-size field, validate it against the
-file length and the expected size for the detected variant, and refuse the file
-if the ETX is not where the header size says it is. Never seek past `len`.
+scanning with a bound, read the header-size field, and only treat it as a
+candidate if it lands inside the file *and* the byte before it is the 0x03
+ETX. If it does not, search a small window for the ETX, then fall back to
+where the field walk ended. Never seek past `len` — the offset comes from
+inside the file, so it is checked at the point of use, not where it was
+computed.
 
 ---
 

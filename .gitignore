@@ -8,3 +8,4 @@ tests/fuzz_*
 !tests/fuzz_*.c
 build/
 *.log
+third_party/*.o
