@@ -45,7 +45,12 @@ across five suites under AddressSanitizer and UndefinedBehaviorSanitizer.
   cursor readout, axis ranges snapped to round numbers.
 - Dark and light themes from one role-based palette table.
 - Every dialog has Cancel / Apply / OK in that order, right aligned, with the
-  body scrolling under a pinned button row.
+  body scrolling under a pinned button row, and a title-bar close button;
+  the X and Escape both mean Cancel.
+- Dialogs are sized to their content rather than to a guessed constant: the
+  body is measured as it is drawn and the window height follows, so the
+  adapter picker is a row taller when a second adapter appears and no dialog
+  hides its own controls behind a scrollbar.
 - Deploy-flag failures are explained in the operator's terms, not as a code.
 - The log page follows the newest line, but stops following the moment the
   operator scrolls up and resumes when they scroll back to the bottom —

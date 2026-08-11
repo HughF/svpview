@@ -13,7 +13,13 @@
  * Dialogs are modal: a scrim window covers the page and swallows input, and
  * every dialog carries the same three buttons in the same order, right
  * aligned: Cancel discards, Apply commits and stays open, OK commits and
- * closes.
+ * closes. The title bar close button and Escape both mean Cancel.
+ *
+ * A dialog is sized to its content rather than to a guessed constant: the
+ * body is measured while it is drawn and the window height follows, so no
+ * dialog is taller than it needs to be or hides its own controls behind a
+ * scrollbar. Only if the content genuinely exceeds the window does the body
+ * scroll, and the button row stays pinned regardless.
  */
 /*
  * NK_IMPLEMENTATION has to be defined before anything pulls in nk.h, which
@@ -108,6 +114,10 @@ struct SvUi {
     /* log page follow-the-tail state */
     int      log_seen;
     float    log_max_off;
+
+    /* dialog auto-sizing */
+    SvDialog dlg_measured;
+    float    dlg_natural_h;
 };
 
 /* ------------------------------------------------------------------ */
@@ -159,6 +169,26 @@ static void gap(SvUi *ui, float h)
 {
     nk_layout_row_dynamic(ui->ctx, S(ui, h), 1);
     nk_spacing(ui->ctx, 1);
+}
+
+/*
+ * Height for a list group holding `rows` rows of `row_h`, so the box is the
+ * size of what is in it rather than a fixed guess — with a floor so an empty
+ * list still has room for its "nothing found" message, and a ceiling so a
+ * machine with a dozen adapters does not produce a dialog taller than the
+ * screen.
+ */
+static float list_height(SvUi *ui, int rows, float row_h, float extra,
+                         float min_h, float max_h)
+{
+    struct nk_context *c = ui->ctx;
+    float pitch = S(ui, row_h) + c->style.window.spacing.y;
+    float h = rows * pitch + S(ui, extra)
+            + c->style.window.group_padding.y * 2.0f;
+
+    if (h < S(ui, min_h)) h = S(ui, min_h);
+    if (h > S(ui, max_h)) h = S(ui, max_h);
+    return h;
 }
 
 /* A button that reads as the primary action. */
@@ -920,7 +950,8 @@ static void dlg_connect_body(SvUi *ui)
 
     gap(ui, 6);
 
-    nk_layout_row_dynamic(c, S(ui, 150), 1);
+    nk_layout_row_dynamic(c,
+        list_height(ui, ui->n_ports, 26.0f, 0.0f, 74.0f, 300.0f), 1);
     if (nk_group_begin(c, "ports", NK_WINDOW_BORDER)) {
         for (int i = 0; i < ui->n_ports; i++) {
             nk_layout_row_dynamic(c, S(ui, 26), 1);
@@ -1254,7 +1285,8 @@ static void dlg_network_body(SvUi *ui)
     gap(ui, 4);
     section(ui, "Adapters");
 
-    nk_layout_row_dynamic(c, S(ui, 170), 1);
+    nk_layout_row_dynamic(c,
+        list_height(ui, ui->n_nifs, 24.0f, 30.0f, 84.0f, 300.0f), 1);
     if (nk_group_begin(c, "nifs", NK_WINDOW_BORDER)) {
         nk_layout_row_template_begin(c, S(ui, 22));
         nk_layout_row_template_push_static(c, S(ui, 140));
@@ -1351,14 +1383,19 @@ static const char *dialog_title(SvDialog d)
     }
 }
 
+/*
+ * Width is a design decision per dialog; height is only the value used for
+ * the very first frame, before the body has been measured. After that the
+ * dialog is sized to its content — see draw_dialog().
+ */
 static struct nk_vec2 dialog_size(SvDialog d)
 {
     switch (d) {
-    case DLG_CONNECT:  return nk_vec2(560, 400);
-    case DLG_SETTINGS: return nk_vec2(660, 620);
-    case DLG_EXPORT:   return nk_vec2(620, 400);
-    case DLG_PROCESS:  return nk_vec2(620, 420);
-    case DLG_NETWORK:  return nk_vec2(740, 470);
+    case DLG_CONNECT:  return nk_vec2(560, 380);
+    case DLG_SETTINGS: return nk_vec2(660, 600);
+    case DLG_EXPORT:   return nk_vec2(620, 380);
+    case DLG_PROCESS:  return nk_vec2(620, 400);
+    case DLG_NETWORK:  return nk_vec2(760, 440);
     default:           return nk_vec2(500, 300);
     }
 }
@@ -1380,6 +1417,18 @@ static void draw_dialog(SvUi *ui, int w, int h)
 
     struct nk_vec2 sz = dialog_size(ui->dialog);
     float dw = S(ui, sz.x), dh = S(ui, sz.y);
+
+    /*
+     * Height comes from the content once it has been measured, so a dialog
+     * is never taller than it needs to be and never hides its own controls
+     * behind a scrollbar. The measurement is taken while drawing, so it is
+     * one frame behind: the first frame uses the fallback above and every
+     * frame after uses the real figure. A scrollbar still appears if the
+     * content genuinely cannot fit the window.
+     */
+    if (ui->dlg_measured == ui->dialog && ui->dlg_natural_h > 0.0f)
+        dh = ui->dlg_natural_h;
+
     if (dw > w - S(ui, 40)) dw = w - S(ui, 40);
     if (dh > h - S(ui, 40)) dh = h - S(ui, 40);
 
@@ -1388,9 +1437,19 @@ static void draw_dialog(SvUi *ui, int w, int h)
     nk_style_push_float(c, &c->style.window.border, 1.0f);
     nk_style_push_color(c, &c->style.window.border_color, t->border);
 
+    /*
+     * nk_begin does not resize a window that already exists and is movable,
+     * so the measured size has to be pushed in explicitly — and before
+     * nk_begin, both because Nuklear asserts against setting the bounds of
+     * the window it is currently processing, and because doing it afterwards
+     * leaves the previous frame's border drawn at the old size.
+     */
+    nk_window_set_bounds(c, "dialog", r);
+
     if (nk_begin_titled(c, "dialog", dialog_title(ui->dialog), r,
                         NK_WINDOW_BORDER | NK_WINDOW_TITLE |
-                        NK_WINDOW_MOVABLE | NK_WINDOW_NO_SCROLLBAR)) {
+                        NK_WINDOW_MOVABLE | NK_WINDOW_CLOSABLE |
+                        NK_WINDOW_NO_SCROLLBAR)) {
         nk_window_set_focus(c, "dialog");
 
         /*
@@ -1414,8 +1473,16 @@ static void draw_dialog(SvUi *ui, int w, int h)
         if (body_h < S(ui, 60))
             body_h = S(ui, 60);
 
+        /* Chrome must be measured out here: inside the group,
+         * nk_window_get_content_region() reports the *group's* region, not
+         * the dialog's, which silently inflated this by 70 px. */
+        float chrome = nk_window_get_bounds(c).h - region.h;
+        float used = 0.0f;
+
         nk_layout_row_dynamic(c, body_h, 1);
         if (nk_group_begin(c, "dlgbody", 0)) {
+            struct nk_rect top = nk_layout_widget_bounds(c);
+
             switch (ui->dialog) {
             case DLG_CONNECT:  dlg_connect_body(ui);  break;
             case DLG_SETTINGS: dlg_settings_body(ui); break;
@@ -1424,7 +1491,28 @@ static void draw_dialog(SvUi *ui, int w, int h)
             case DLG_NETWORK:  dlg_network_body(ui);  break;
             default: break;
             }
+
+            /*
+             * Opening a zero-height row advances the layout cursor past the
+             * last real row without adding anything to the content: reading
+             * the position without it can return a slot still inside the
+             * final row, leaving the dialog one row short with its last
+             * control clipped. Nothing is drawn into the row — a widget here
+             * would count as content and bring back a scrollbar. The row's
+             * leading gap is not content either, so it comes off again.
+             */
+            nk_layout_row_dynamic(c, 0.0f, 1);
+            used = nk_layout_widget_bounds(c).y - top.y
+                 - c->style.window.spacing.y;
+
             nk_group_end(c);
+        }
+
+        if (used > 0.0f) {
+            float reserve = region.h - body_h;
+            ui->dlg_natural_h = chrome + reserve + used
+                              + c->style.window.group_padding.y * 2.0f;
+            ui->dlg_measured = ui->dialog;
         }
 
         dialog_message(ui);
