@@ -104,6 +104,10 @@ struct SvUi {
 
     unsigned traces;
     int      overlay;
+
+    /* log page follow-the-tail state */
+    int      log_seen;
+    float    log_max_off;
 };
 
 /* ------------------------------------------------------------------ */
@@ -805,11 +809,45 @@ static void page_log(SvUi *ui, struct nk_rect r)
 {
     struct nk_context *c = ui->ctx;
 
-    nk_layout_row_dynamic(c, r.h - S(ui, 30), 1);
+    int   n     = sv_app_log_count(ui->app);
+    float row   = S(ui, 18);
+    float pitch = row + c->style.window.spacing.y;
+    float view  = r.h - S(ui, 30);
+
+    /*
+     * Follow the newest line, but only while the operator is already at the
+     * bottom. Scrolling up to read something and having the view yanked back
+     * on the next log line makes the page unusable during a download, so a
+     * deliberate scroll away from the bottom stops the follow until they
+     * return to it.
+     */
+    nk_uint sx = 0, sy = 0;
+    nk_group_get_scroll(c, "log", &sx, &sy);
+
+    float content = (float)n * pitch + c->style.window.group_padding.y * 2.0f;
+    float max_off = content - view;
+    if (max_off < 0.0f)
+        max_off = 0.0f;
+
+    if (n != ui->log_seen) {
+        /* Compare against the maximum offset *before* this batch arrived. */
+        bool was_at_bottom = (ui->log_max_off <= 0.0f) ||
+                             ((float)sy >= ui->log_max_off - pitch);
+        if (was_at_bottom)
+            sy = (nk_uint)max_off;
+
+        ui->log_seen = n;
+    }
+    ui->log_max_off = max_off;
+
+    if ((float)sy > max_off)
+        sy = (nk_uint)max_off;
+    nk_group_set_scroll(c, "log", sx, sy);
+
+    nk_layout_row_dynamic(c, view, 1);
     if (nk_group_begin(c, "log", NK_WINDOW_BORDER)) {
-        int n = sv_app_log_count(ui->app);
         for (int i = 0; i < n; i++) {
-            nk_layout_row_dynamic(c, S(ui, 18), 1);
+            nk_layout_row_dynamic(c, row, 1);
             const char *line = sv_app_log_line(ui->app, i);
             struct nk_color col = ui->theme->text_dim;
             if (strncmp(line, "error", 5) == 0)  col = ui->theme->alarm;

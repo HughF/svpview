@@ -47,6 +47,10 @@ across five suites under AddressSanitizer and UndefinedBehaviorSanitizer.
 - Every dialog has Cancel / Apply / OK in that order, right aligned, with the
   body scrolling under a pinned button row.
 - Deploy-flag failures are explained in the operator's terms, not as a code.
+- The log page follows the newest line, but stops following the moment the
+  operator scrolls up and resumes when they scroll back to the bottom —
+  having the view yanked back mid-read makes the page useless during a
+  download.
 
 ### Added — network adapter selection
 - Settings → Select adapter… lists the machine's **connected** broadcast-capable
