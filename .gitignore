@@ -1,0 +1,10 @@
+*.o
+*.d
+*.exe
+svpview
+tests/test_*
+!tests/test_*.c
+tests/fuzz_*
+!tests/fuzz_*.c
+build/
+*.log
