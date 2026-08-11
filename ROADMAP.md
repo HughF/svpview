@@ -28,7 +28,9 @@ No I/O at all. Pure parsers, driven by test vectors from the integration guide.
 - `sv_binfile.c`: all three header variants, SV and CTD, sample decode
 - `sv_vpd.c`: `.vpd` and `.vp2` read/write
 - `sv_ocean.c`: UNESCO 83 depth, PSS-78 salinity, EOS-80 density, Chen-Millero SV
-- `tests/test_proto.c`, `test_binfile.c`, `test_vpd.c`, `test_ocean.c`
+- `sv_vigo.c`: `Q` / `V` / `F` message build and reply match — no socket
+- `tests/test_proto.c`, `test_binfile.c`, `test_vpd.c`, `test_ocean.c`,
+  `test_vigo.c`
 - `tests/fuzz_binfile.c`, `fuzz_vpd.c` + corrupt-file corpus
 
 **Done when:** every documented sentence and header variant round-trips, fuzzers
@@ -91,27 +93,35 @@ output for the same input cast.
 
 ---
 
-## Phase 6 — Vigo integration (1.5 days) **HW**
+## Phase 6 — Vigo depth reporting (0.5 day) **HW**
 
-- `sv_vigo.c` TCP client: commands, queries, `$EVT:` demux, reconnect
-- UDP :8090 depth report with the `Q`/`V`/`F` handshake
-- Winch page: state, run cast to depth, abort, recover
-- Cast log correlating commanded depth against achieved depth
+Small phase — one UDP socket and three message types. `sv_vigo.c` is pure
+formatting and reply matching, so most of it is unit-tested in Phase 1.
 
-**Done when:** a cast commanded from svpview completes on the winch and the
-achieved depth is accepted by Vigo (dive-table entry recorded), with
-VigoDepthRelay not running.
+- `Q` probe at startup and on a timer; "winch reachable" indicator
+- `VP-NNN,Valeport-Winch-Go,<depth>` broadcast on :8090, `ACK` matched and
+  logged, `VP-NNN` incrementing per cast to defeat Vigo's dedupe
+- `F` on download failure, `BTRST` awaited, bounded retry
+- Every datagram sent and every reply (or absence) written to the protocol log
+
+**Done when:** a real cast's depth is accepted by Vigo — dive-table entry
+recorded, `transfer-complete-event` seen on the winch UI — with VigoDepthRelay
+not running. Then repeat the same depth immediately to prove the `VP-NNN`
+increment defeats the dedupe.
 
 ---
 
-## Phase 7 — Unattended loop (1 day) **HW**
+## Phase 7 — Unattended download loop (1 day) **HW**
 
-- Arm → cast → wait → download → export → report → repeat
-- Every arrow timed out, every failure ending in a safe state
-- Operator can abort at any point
+The operator commands casts from the winch; svpview reacts to them.
 
-**Done when:** ten consecutive unattended casts complete without intervention,
-and an induced failure at each stage (winch abort, BT drop, corrupt file) ends
+- Detect new cast from the `$PVBB` file timestamp, reconstruct the filename
+- Download → verify → parse → plot → export → broadcast depth
+- Induced-failure handling: BT drop mid-download → `F` → `BTRST` → retry;
+  corrupt file → keep on card, report, do not broadcast a bogus depth
+
+**Done when:** ten consecutive operator-commanded casts are downloaded,
+exported and reported without intervention, and each induced failure ends
 safely and is logged.
 
 ---
@@ -129,7 +139,7 @@ safely and is logged.
 
 | Item | Why | Route |
 |---|---|---|
-| Manual jog / brake / level wind | Not exposed on Vigo's TCP API | Upstream PR adding `$JOGIN`/`$JOGOUT`/`$BRAKE` to `vigoServer.js` (GPL, publicly distributed) |
+| Winch control of any kind | Out of scope by decision — casts are commanded from the winch's own UI and panel | Vigo's TCP :8092 API exists if this is ever wanted |
 | `#433` acknowledged extraction | Protocol figure blank in the PDF | Ask Valeport, or capture Ocean doing a download |
 | AML profiler support | Different instrument family entirely | Only if the fleet needs it; the core is structured to allow a second instrument backend |
 | Mobile / phone app | Out of scope | — |

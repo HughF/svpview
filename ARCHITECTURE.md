@@ -2,24 +2,27 @@
 
 **Status:** design, no implementation yet
 **Target:** C99 + SDL2, cross-platform (Linux / Windows / macOS)
-**Purpose:** replace Valeport Ocean for Valeport SWiFT profilers, with native C-MAX Vigo winch control
+**Purpose:** replace Valeport Ocean for Valeport SWiFT profilers, and VigoDepthRelay for winch depth reporting
 
 ---
 
 ## 1. What this is
 
 `svpview` downloads, displays, processes and exports data from Valeport SWiFT
-SVP / SWiFT CTD / SWiFTplus profilers, and drives a Vigo profiling winch from
-the same window. It replaces two pieces of third-party software in the survey
-chain:
+SVP / SWiFT CTD / SWiFTplus profilers, and reports each cast's achieved depth
+to a C-MAX Vigo winch. It replaces two pieces of software in the survey chain:
 
 - **Valeport Ocean** — instrument configuration, download, plotting, export
 - **VigoDepthRelay** — the .NET shim that watches a download folder and
   broadcasts the achieved cast depth to the winch
 
 Collapsing both into one program removes the folder-watching round trip: the
-cast depth is known the instant the file is parsed, in the same process that
-commanded the cast.
+depth is broadcast the instant the file is parsed, by the process that
+downloaded it.
+
+**svpview does not control the winch.** It speaks the profiler UDP protocol on
+:8090 — `Q`, `V` and `F` — and nothing else. Casts are commanded from the
+winch's own web UI and physical panel, exactly as they are today. See §7.
 
 ### The six requirements, as engineering decisions
 
@@ -113,10 +116,11 @@ not be rubbish.
 - Valeport `.vp2` and legacy `.vpd`
 - Auto-export on download, to a configured folder, with a filename template
 
-**Winch (new — Ocean cannot do this)**
-- Connect to Vigo, live winch state, run cast to depth, abort, recover
-- Automatic depth report to the winch on download (replaces VigoDepthRelay)
-- Cast → download → export → next cast, unattended
+**Winch depth reporting** (replaces VigoDepthRelay)
+- Broadcast `VP-NNN,Valeport-Winch-Go,<depth>` on UDP :8090 after each download
+- `Q` probe at startup and periodically — live "winch reachable" indicator
+- `F` on a failed download, so the winch jogs the profiler in 100 mm to recover
+  the Bluetooth link, then retry
 
 ---
 
@@ -127,9 +131,9 @@ not be rubbish.
 | `sv_main.c` | ui | SDL init, event pump, frame loop, teardown |
 | `sv_app.c` | app | Application state struct, queue pumping, autosave |
 | `sv_session.c` | app | Instrument FSM: interrupt → configure → run → download |
-| `sv_cast.c` | app | Cast FSM, winch coordination, cast log |
+| `sv_cast.c` | app | Cast detection, download-and-report sequence, cast log |
 | `sv_ui.c` | ui | Nuklear context, layout shell, page routing |
-| `sv_pages_*.c` | ui | One file per page: connect, live, profile, config, files, winch |
+| `sv_pages_*.c` | ui | One file per page: connect, live, profile, config, files |
 | `sv_plot.c` | ui | Profile/time plot renderer (SDL primitives, no Nuklear) |
 | `sv_theme.c` | ui | Palette, light/dark, HiDPI scale |
 | `sv_proto.c` | core | `#NNN` command codec; `$PVBB`/`$PVSVP`/`$PVSV1/2`/`$PVCT2` parsers |
@@ -138,7 +142,7 @@ not be rubbish.
 | `sv_profile.c` | core | Cast data model and processing |
 | `sv_ocean.c` | core | UNESCO 83 depth, PSS-78 salinity, EOS-80 density, Chen-Millero SV |
 | `sv_export.c` | core | Export writers |
-| `sv_vigo.c` | core | Vigo TCP command/response/event codec, UDP depth message codec |
+| `sv_vigo.c` | core | Profiler UDP message codec: `Q` / `V` / `F` build, reply match |
 | `sv_log.c` | core | Rotating text log, one line per protocol exchange |
 | `plat_serial.c` | plat | Open/enumerate/read/write/close a serial port |
 | `plat_net.c` | plat | TCP client, UDP socket, broadcast |
@@ -158,10 +162,9 @@ crosses on a queue.
 ```
   serial thread ──► rx ring ──►┐
                                ├──► app thread (pumps queues, owns state)
-  vigo tcp thread ──► evt q ──►┤        │
-                               │        └──► state snapshot (double-buffered)
-  udp thread ────────► q ─────►┘                    │
-        ▲                                           ▼
+  udp thread ──────► reply q ─►┘        │
+        ▲                               └──► state snapshot (double-buffered)
+        │                                             │
         └──────────── cmd queues ◄──────────── UI thread (render, 60 Hz)
 ```
 
@@ -207,8 +210,9 @@ Rules encoded in `sv_session.c`:
 - The instrument auto-leaves `INTERRUPTED` after 5 minutes with no commands;
   the app tracks that timer itself and re-interrupts rather than being
   surprised.
-- **Deploying while interrupted records no profile.** The app refuses to arm a
-  cast unless it has confirmed run mode, and says so on the winch page.
+- **Deploying while interrupted records no profile.** The app warns prominently
+  whenever the instrument is left interrupted, because the operator is about to
+  deploy it from the winch panel and will get an empty cast.
 - Sleep-mode wake is a plain character, never `#` (that interrupts, and then
   needs `#028` to recover). Encoded once, in one function.
 - Destructive commands (`#401` erase card, `#404` delete, `#431` delete tree)
@@ -217,58 +221,66 @@ Rules encoded in `sv_session.c`:
 
 ---
 
-## 7. Vigo winch integration
+## 7. Vigo winch — depth reporting
 
-**This is the finding that shapes the whole winch design:** `vigoServer.js`
-already exposes a complete line-based ASCII control API on **TCP :8092** —
-14 queries, 10 commands including `$RUNCAST,<depth>`, `$ABORT`, `$RECOVER`,
-plus asynchronous `$EVT:` broadcasts. Full listing in docs/VIGO_INTERFACE.md.
+The winch is not controlled from here. svpview occupies exactly the slot
+Ocean/Connect and VigoDepthRelay occupy today: one UDP socket on **:8090**,
+broadcast, three message types distinguished by their first character. Full
+detail and the ignore rules in docs/VIGO_INTERFACE.md.
 
-So `svpview` needs **no Socket.IO client**. A plain TCP socket and a line
-splitter gets full winch control from C. That removes what would otherwise
-have been the largest and least reliable subsystem in the program (an
-engine.io/WebSocket implementation in C, against a socket.io 2.1.2 server).
-
-Three links to the winch:
-
-| Link | Direction | Purpose |
+| svpview sends | Vigo replies | Purpose |
 |---|---|---|
-| TCP :8092 | bi-directional | Commands, queries, `$EVT:` events |
-| UDP :8090 | outbound (broadcast) | Depth report after download — the VigoDepthRelay job |
-| UDP :8091 | outbound, optional | Echo-sounder water depth passthrough, if svpview is fed NMEA |
+| `Q…` | `VIGO responding` | probe — is the winch on the network |
+| `VP-NNN,Valeport-Winch-Go,<depth>` | `ACK` | achieved cast depth, metres |
+| `F…` | `BTRST` | download failed; winch jogs in 100 mm, then retry |
 
-The UDP depth report must match what the winch already expects, because the
-server-side parser is not changing: `Q…` probe answered with
-`VIGO responding`, then `V,<csv>,…,<depth>` answered with `ACK`. Broadcast
-address, so no winch IP configuration — same as Connect/Ocean.
+Broadcast address, so no winch IP is configured anywhere — same as Ocean.
 
-Vigo validates the reported depth (rejects ≤0, and anything outside 0.1× to
-10× the requested cast depth) so a malformed report is dropped, not acted on.
-`sv_vigo.c` formats it correctly and logs exactly what went on the wire.
+Three things about this protocol drive the implementation, and all three are
+places where a naive version silently does nothing:
 
-**Gap:** the TCP API covers cast/abort/recover but not jog, brake, level-wind
-or drive-enable — those are Socket.IO-only. If the app is to offer manual jog,
-the clean route is a small upstream addition to `vigoServer.js`
-(`$JOGIN` / `$JOGOUT` / `$BRAKE`), contributed as a PR — Vigo is publicly
-distributed and GPL. Manual jog is therefore **out of scope for v1** and the
-winch page shows the physical panel as the place to do it.
+1. **Vigo ignores a message identical to the previous one.** Two consecutive
+   casts to the same depth produce identical datagrams and the second is
+   discarded. Hence the incrementing `VP-NNN` — real captured traffic shows
+   `VP-001` and `VP-003`, and Ocean repeats each datagram many times per cast
+   relying on that same dedupe.
+2. **Vigo ignores everything until it has performed at least one cast**, and
+   ignores `V` if the cast was aborted. Silence is therefore not proof of a
+   network fault, and svpview must not escalate on it.
+3. **Depth is validated server-side** — dropped if non-finite, ≤ 0, or outside
+   0.1× to 10× the requested cast depth.
 
-### Unattended cast loop
+So `sv_vigo.c` logs the exact bytes sent and whether a reply arrived, and the
+status bar shows the last `ACK`. That turns all three silent-drop cases into
+something an operator can see, which is the whole reason for writing this
+rather than keeping VigoDepthRelay.
+
+The `F` path is the one case where svpview causes the winch to move: a failed
+Bluetooth download sends `F`, Vigo checks its proximity switch, jogs the spool
+in 100 mm to shorten the Bluetooth path, and replies `BTRST`. svpview then
+retries the download, bounded, and stops with a clear message rather than
+looping.
+
+UDP :8091 (echo-sounder NMEA depth) is not used — the survey system feeds that
+directly.
+
+### Post-cast sequence
 
 ```
-  arm ──► $RUNCAST,<depth> ──► $EVT:CYCLEFLAG,out
-            │                       │
-            │                  $EVT:CASTCOMPLETE
-            │                       ▼
-            │              wait for $PVBB new-file flag
-            │                       ▼
-            │              download #402 ──► parse ──► export
-            │                       ▼
-            └──────── UDP 'V,…,<depth>' to :8090 ──► repeat / stop
+  $PVBB new-file flag / timestamp change
+            ▼
+  reconstruct filename from serial + timestamp
+            ▼
+  download #402 ──fail──► send 'F' ──BTRST──► retry (bounded)
+            ▼ ok
+  parse ──► plot ──► export
+            ▼
+  broadcast 'VP-NNN,Valeport-Winch-Go,<depth>' ──► expect ACK
 ```
 
-Every arrow has a timeout and a failure branch that ends in a safe state:
-winch idle, instrument in run mode, raw file kept on the SD card.
+Every arrow has a timeout and a failure branch that ends somewhere safe: the
+raw file stays on the SD card until a download is verified, and the operator is
+told what did not happen.
 
 ---
 
@@ -286,14 +298,15 @@ and two clicks.
 │ PROF │        plot area — always the largest thing             │
 │ FILE │        on screen                                        │
 │ CONF │                                                         │
-│ WNCH │                                                         │
 ├──────┴─────────────────────────────────────────────────────────┤
-│ ready to deploy ✓   winch idle   last cast 25.4 m 10:54:36     │ action bar
+│ ready to deploy ✓  winch ACK 10:54:36  last cast 25.4 m        │ action bar
 └────────────────────────────────────────────────────────────────┘
 ```
 
 - **Status strip** is always truthful: connection, battery, fix, deploy flag.
-  A red deploy flag names the cause and the fix.
+  A red deploy flag names the cause and the fix. The action bar shows when the
+  winch last acknowledged a depth report — the one piece of winch state that
+  matters here.
 - **The plot is the app.** Everything else is a side rail.
 - Dark theme first, light theme available; both defined as one palette table
   in `sv_theme.c` (`cm2view`'s approach).
@@ -380,6 +393,12 @@ Dependencies, complete: SDL2, SDL2_ttf, and vendored `nuklear.h`. Nothing else.
 3. **Real instrument access.** Every protocol decision above is from the
    document. A capture session with a real SWiFT is needed before Phase 2 is
    called done — in particular the exact echo behaviour of `#NNN` commands.
-4. **Vigo docs drift.** `Vigo/ARCHITECTURE.md` documents 5 TCP queries; the
-   code implements 14 queries and 10 commands. docs/VIGO_INTERFACE.md here is
-   taken from the code and is the accurate one; worth an upstream doc fix.
+4. **`VP-NNN` numbering.** Captured traffic shows `VP-001` and `VP-003`;
+   `VP-000` is Vigo's own synthetic manual-depth message. Whether the number is
+   a cast counter, a file index or an instrument code is not documented
+   anywhere we have. svpview increments it per cast, which satisfies the only
+   constraint that actually matters (Vigo's identical-message dedupe), but it
+   is worth confirming against a live Ocean capture.
+5. **`Q` and `F` payloads.** Vigo dispatches on character 0 alone, so the rest
+   of those datagrams is unconstrained and unobserved. svpview mirrors the `V`
+   shape for consistency; a capture of Ocean/VigoDepthRelay would confirm.

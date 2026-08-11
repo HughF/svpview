@@ -12,5 +12,11 @@ truth for release notes.
   - `ROADMAP.md` — nine phases with done-criteria and explicit deferrals
   - `docs/SWIFT_PROTOCOL.md` — SWiFT command codes, `$PVBB`/`$PVSV*` sentences,
     the three binary header variants, VPD/VP2 layout
-  - `docs/VIGO_INTERFACE.md` — Vigo TCP :8092 command API and UDP :8090 depth
-    handshake, read from `vigoServer.js` rather than from Vigo's own docs
+  - `docs/VIGO_INTERFACE.md` — the profiler UDP :8090 protocol (`Q`/`V`/`F`),
+    the `VP-NNN,Valeport-Winch-Go,<depth>` wire format, and Vigo's five
+    silent-drop rules, read from `vigoServer.js` and captured traffic
+
+### Changed
+- Scope reduced: svpview reports cast depth to the winch over UDP :8090 but
+  does **not** control it. Vigo's TCP :8092 control API is documented as
+  available and explicitly unused.
