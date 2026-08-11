@@ -22,6 +22,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 
 /* ---- time ---------------------------------------------------------- */
 
@@ -64,7 +66,7 @@ int plat_serial_list(PlatPortInfo *out, int max)
             if (e->d_name[0] == '.')
                 continue;
 
-            char link[256];
+            char link[512];
             snprintf(link, sizeof link, "%s/%s", by_id, e->d_name);
 
             char real[256];
@@ -74,11 +76,11 @@ int plat_serial_list(PlatPortInfo *out, int max)
                 /* readlink gives "../../ttyUSB0" */
                 const char *base = strrchr(real, '/');
                 snprintf(out[n].path, sizeof out[n].path,
-                         "/dev/%s", base ? base + 1 : real);
+                         "/dev/%.240s", base ? base + 1 : real);
             } else {
-                snprintf(out[n].path, sizeof out[n].path, "%s", link);
+                snprintf(out[n].path, sizeof out[n].path, "%.240s", link);
             }
-            snprintf(out[n].label, sizeof out[n].label, "%s", e->d_name);
+            snprintf(out[n].label, sizeof out[n].label, "%.120s", e->d_name);
             n++;
         }
         closedir(d);
@@ -96,7 +98,7 @@ int plat_serial_list(PlatPortInfo *out, int max)
                     continue;
 
                 char path[256];
-                snprintf(path, sizeof path, "/dev/%s", e->d_name);
+                snprintf(path, sizeof path, "/dev/%.240s", e->d_name);
 
                 bool dup = false;
                 for (int j = 0; j < n; j++)
@@ -106,7 +108,7 @@ int plat_serial_list(PlatPortInfo *out, int max)
                     break;
 
                 snprintf(out[n].path, sizeof out[n].path, "%s", path);
-                snprintf(out[n].label, sizeof out[n].label, "%s", e->d_name);
+                snprintf(out[n].label, sizeof out[n].label, "%.120s", e->d_name);
                 n++;
                 break;
             }
@@ -191,9 +193,80 @@ int plat_serial_write(PlatSerial *s, const void *buf, size_t len)
 
 /* ---- UDP ----------------------------------------------------------- */
 
+int plat_net_list_ifs(PlatNetIf *out, int max)
+{
+    struct ifaddrs *head = NULL;
+    if (getifaddrs(&head) != 0)
+        return 0;
+
+    int n = 0;
+    for (struct ifaddrs *ifa = head; ifa && n < max; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET)
+            continue;
+        if (!(ifa->ifa_flags & IFF_BROADCAST))
+            continue;              /* loopback and point-to-point links */
+
+        /* Connected only: IFF_UP is the administrative state, IFF_RUNNING is
+         * the one that means a cable is actually in. */
+        if (!(ifa->ifa_flags & IFF_UP) || !(ifa->ifa_flags & IFF_RUNNING))
+            continue;
+
+        const struct sockaddr_in *chk = (const struct sockaddr_in *)ifa->ifa_addr;
+        if (chk->sin_addr.s_addr == 0)
+            continue;              /* up, but no address yet */
+
+        PlatNetIf *e = &out[n];
+        memset(e, 0, sizeof *e);
+        snprintf(e->name, sizeof e->name, "%s", ifa->ifa_name);
+
+        const struct sockaddr_in *sa = (const struct sockaddr_in *)ifa->ifa_addr;
+        inet_ntop(AF_INET, &sa->sin_addr, e->ip, sizeof e->ip);
+
+        /*
+         * Derive the directed broadcast from the address and the mask:
+         *   bcast = (ip & mask) | ~mask
+         *
+         * The kernel offers ifa_broadaddr, but it is not guaranteed to be
+         * present or correct on every platform and the Windows path has to
+         * compute it from the mask regardless, so it is computed here in one
+         * place and ifa_broadaddr is only a fallback. Getting this wrong
+         * sends the depth report to the wrong subnet's broadcast, where the
+         * winch never sees it.
+         */
+        uint32_t ip = ntohl(sa->sin_addr.s_addr);
+        uint32_t mask = 0;
+
+        if (ifa->ifa_netmask) {
+            const struct sockaddr_in *m =
+                (const struct sockaddr_in *)ifa->ifa_netmask;
+            mask = ntohl(m->sin_addr.s_addr);
+            inet_ntop(AF_INET, &m->sin_addr, e->mask, sizeof e->mask);
+        }
+
+        if (mask != 0 && mask != 0xFFFFFFFFu) {
+            uint32_t b = (ip & mask) | (~mask);
+            struct in_addr ba;
+            ba.s_addr = htonl(b);
+            inet_ntop(AF_INET, &ba, e->bcast, sizeof e->bcast);
+        } else if (ifa->ifa_broadaddr) {
+            const struct sockaddr_in *b =
+                (const struct sockaddr_in *)ifa->ifa_broadaddr;
+            inet_ntop(AF_INET, &b->sin_addr, e->bcast, sizeof e->bcast);
+        }
+        if (!e->bcast[0])
+            snprintf(e->bcast, sizeof e->bcast, "255.255.255.255");
+
+        e->up = true;              /* filtered above */
+        n++;
+    }
+
+    freeifaddrs(head);
+    return n;
+}
+
 struct PlatUdp { int fd; };
 
-PlatUdp *plat_udp_open(void)
+PlatUdp *plat_udp_open(const char *bind_ip)
 {
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0)
@@ -206,12 +279,16 @@ PlatUdp *plat_udp_open(void)
     }
     fcntl(fd, F_SETFL, O_NONBLOCK);
 
-    /* Bind to an ephemeral port so replies come back to us. */
+    /* Bind to an ephemeral port so replies come back to us. Binding to a
+     * specific adapter address is what pins the traffic to that wire. */
     struct sockaddr_in a;
     memset(&a, 0, sizeof a);
     a.sin_family = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_ANY);
     a.sin_port = 0;
+    a.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind_ip && *bind_ip && inet_pton(AF_INET, bind_ip, &a.sin_addr) != 1)
+        a.sin_addr.s_addr = htonl(INADDR_ANY);
+
     if (bind(fd, (struct sockaddr *)&a, sizeof a) != 0) {
         close(fd);
         return NULL;
@@ -234,7 +311,8 @@ void plat_udp_close(PlatUdp *u)
     free(u);
 }
 
-int plat_udp_send_broadcast(PlatUdp *u, int port, const void *buf, size_t len)
+int plat_udp_send_broadcast(PlatUdp *u, const char *dest_bcast, int port,
+                            const void *buf, size_t len)
 {
     if (!u)
         return -1;
@@ -242,8 +320,10 @@ int plat_udp_send_broadcast(PlatUdp *u, int port, const void *buf, size_t len)
     struct sockaddr_in a;
     memset(&a, 0, sizeof a);
     a.sin_family = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_BROADCAST);
     a.sin_port = htons((uint16_t)port);
+    a.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+    if (dest_bcast && *dest_bcast)
+        inet_pton(AF_INET, dest_bcast, &a.sin_addr);
 
     ssize_t w = sendto(u->fd, buf, len, 0, (struct sockaddr *)&a, sizeof a);
     return (w < 0) ? -1 : (int)w;

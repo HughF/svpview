@@ -88,6 +88,10 @@ typedef struct {
     size_t      dl_bytes;
     char        dl_name[SV_MAX_NAME];
 
+    char        net_if[64];         /* adapter name, "" = default route */
+    char        net_ip[46];
+    char        net_bcast[46];
+
     SvWinchState winch;
     uint64_t    winch_ack_ms;
     int         winch_seq;
@@ -133,6 +137,13 @@ const char *sv_app_open_file(SvApp *a, const char *path);
 
 const char *sv_app_export(SvApp *a, int cast, SvExportFormat f,
                           const char *path);
+
+/*
+ * Choose the adapter the winch traffic goes out of. Pass NULL/"" to fall
+ * back to the default route. Reopens the socket, so it can be called at any
+ * time. Returns NULL or a reason.
+ */
+const char *sv_app_set_interface(SvApp *a, const PlatNetIf *nif);
 
 /* Winch. report_depth uses the selected cast's maximum depth. */
 void sv_app_probe_winch(SvApp *a);

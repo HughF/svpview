@@ -39,16 +39,49 @@ void plat_serial_close(PlatSerial *s);
 int  plat_serial_read(PlatSerial *s, void *buf, size_t cap);
 int  plat_serial_write(PlatSerial *s, const void *buf, size_t len);
 
+/* ---- network interfaces -------------------------------------------- */
+
+#define PLAT_MAX_IFS 16
+
+typedef struct {
+    char name[64];         /* eth0, Ethernet 2, ...                     */
+    char ip[46];           /* this adapter's address                    */
+    char mask[46];         /* its subnet mask                           */
+    char bcast[46];        /* directed broadcast, computed from the mask */
+    bool up;               /* link is up and it has an address          */
+} PlatNetIf;
+
+/*
+ * Enumerate IPv4 broadcast-capable adapters. Returns the count, at most max.
+ *
+ * A survey PC usually has more than one: the survey LAN and a general
+ * network. Broadcasting to 255.255.255.255 leaves the choice of which one to
+ * the routing table, which is how a depth report ends up on the wrong wire
+ * and the winch never hears it — so the adapter is chosen explicitly.
+ */
+int plat_net_list_ifs(PlatNetIf *out, int max);
+
 /* ---- UDP ----------------------------------------------------------- */
 
 typedef struct PlatUdp PlatUdp;
 
-/* Broadcast-capable socket bound to an ephemeral port. NULL on failure. */
-PlatUdp *plat_udp_open(void);
+/*
+ * Broadcast-capable socket bound to an ephemeral port.
+ *
+ * bind_ip selects the adapter to send from: pass an adapter address to pin
+ * the traffic to that interface, or NULL for the default route. NULL on
+ * failure.
+ */
+PlatUdp *plat_udp_open(const char *bind_ip);
 void plat_udp_close(PlatUdp *u);
 
-/* Send to the broadcast address on `port`. Returns bytes sent or -1. */
-int  plat_udp_send_broadcast(PlatUdp *u, int port, const void *buf, size_t len);
+/*
+ * Broadcast on `port`. dest_bcast is the directed broadcast address of the
+ * chosen adapter; NULL falls back to 255.255.255.255. Returns bytes sent
+ * or -1.
+ */
+int  plat_udp_send_broadcast(PlatUdp *u, const char *dest_bcast, int port,
+                             const void *buf, size_t len);
 
 /* Non-blocking receive. Returns bytes read, 0 if nothing waiting, -1 error. */
 int  plat_udp_recv(PlatUdp *u, void *buf, size_t cap);

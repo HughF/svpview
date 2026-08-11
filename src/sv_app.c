@@ -85,6 +85,12 @@ static void logf_(SvApp *a, const char *fmt, ...)
     vsnprintf(line, sizeof line, fmt, ap);
     va_end(ap);
 
+    /* Multi-line instrument replies arrive as one string with embedded
+     * CR/LF; left alone they render as '?' boxes in the log view. */
+    for (char *p = line; *p; p++)
+        if ((unsigned char)*p < 0x20)
+            *p = ' ';
+
     snprintf(a->log[a->log_head], SV_LOG_WIDTH, "%s", line);
     a->log_head = (a->log_head + 1) % SV_LOG_LINES;
     if (a->log_n < SV_LOG_LINES)
@@ -492,6 +498,33 @@ static void poll_winch(SvApp *a)
     }
 }
 
+const char *sv_app_set_interface(SvApp *a, const PlatNetIf *nif)
+{
+    PlatUdp *u = plat_udp_open(nif ? nif->ip : NULL);
+    if (!u)
+        return "cannot bind a socket to that adapter";
+
+    if (a->udp)
+        plat_udp_close(a->udp);
+    a->udp = u;
+
+    if (nif) {
+        snprintf(a->st.net_if,    sizeof a->st.net_if,    "%s", nif->name);
+        snprintf(a->st.net_ip,    sizeof a->st.net_ip,    "%s", nif->ip);
+        snprintf(a->st.net_bcast, sizeof a->st.net_bcast, "%s", nif->bcast);
+        logf_(a, "winch traffic bound to %s (%s, broadcast %s)",
+              nif->name, nif->ip, nif->bcast);
+    } else {
+        a->st.net_if[0] = a->st.net_ip[0] = a->st.net_bcast[0] = '\0';
+        logf_(a, "winch traffic follows the default route");
+    }
+
+    /* The adapter changed, so anything we knew about the winch is stale. */
+    a->st.winch = SV_WINCH_UNKNOWN;
+    a->st.winch_ack_ms = 0;
+    return NULL;
+}
+
 void sv_app_probe_winch(SvApp *a)
 {
     char msg[128];
@@ -499,7 +532,7 @@ void sv_app_probe_winch(SvApp *a)
     if (!n || !a->udp)
         return;
 
-    if (plat_udp_send_broadcast(a->udp, VIGO_PORT, msg, n) < 0) {
+    if (plat_udp_send_broadcast(a->udp, a->st.net_bcast, VIGO_PORT, msg, n) < 0) {
         set_error(a, "cannot broadcast on UDP %d", VIGO_PORT);
         return;
     }
@@ -528,7 +561,7 @@ const char *sv_app_report_depth(SvApp *a)
     if (!n)
         return "message would not fit";
 
-    if (plat_udp_send_broadcast(a->udp, VIGO_PORT, msg, n) < 0)
+    if (plat_udp_send_broadcast(a->udp, a->st.net_bcast, VIGO_PORT, msg, n) < 0)
         return "broadcast failed";
 
     snprintf(a->st.winch_last, sizeof a->st.winch_last, "%s", msg);
@@ -555,7 +588,7 @@ SvApp *sv_app_create(bool simulate)
 
     a->simulate = simulate;
     a->sel = -1;
-    a->udp = plat_udp_open();
+    a->udp = plat_udp_open(NULL);
     if (!a->udp)
         logf_(a, "no UDP socket: winch reporting unavailable");
 

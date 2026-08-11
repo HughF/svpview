@@ -16,12 +16,21 @@ Reference: `profilerUDPListener.on('message')` in `../Vigo/vigoServer.js`
 | | |
 |---|---|
 | Port | UDP **8090** |
-| Address | **broadcast** — no winch IP is configured anywhere |
+| Address | the **directed broadcast** of the chosen adapter — no winch IP is configured anywhere |
 | Encoding | ASCII, comma-separated, no terminator required |
 | Dispatch | Vigo switches on **character 0 only** — `Q`, `V`, `F` |
 
 Vigo replies to the source address and port of the datagram it received, so the
 sending socket must stay open and bound to receive the reply.
+
+**Which adapter.** A survey PC normally has more than one network adapter, and
+sending to 255.255.255.255 leaves the choice of wire to the routing table —
+which is how a depth report goes out of the office NIC and the winch never
+hears it. svpview therefore makes the operator pick the adapter (Settings →
+Select adapter…, listing only *connected* ones), binds the socket to that
+adapter's address, and sends to that subnet's directed broadcast, computed
+from the address and mask as `(ip & mask) | ~mask` rather than taken on trust
+from the OS. VigoDepthRelay forces the same choice for the same reason.
 
 ---
 

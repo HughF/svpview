@@ -48,6 +48,18 @@ across five suites under AddressSanitizer and UndefinedBehaviorSanitizer.
   body scrolling under a pinned button row.
 - Deploy-flag failures are explained in the operator's terms, not as a code.
 
+### Added — network adapter selection
+- Settings → Select adapter… lists the machine's **connected** broadcast-capable
+  adapters with address, mask and the broadcast that will be used, and binds
+  the winch socket to the chosen one. The directed broadcast is computed from
+  the address and mask, not taken from the OS, because the Windows path has to
+  compute it anyway and a wrong broadcast silently sends the depth report to
+  the wrong subnet.
+- Verified end to end against a stand-in for `profilerUDPListener`:
+  `Q` → `VIGO responding`, `VP-001,…,23.958` → `ACK`, and the *same depth
+  again* as `VP-002` → `ACK`, proving the incrementing sequence defeats Vigo's
+  identical-message dedupe. All datagrams left the selected adapter's address.
+
 ### Fixed during bring-up
 - `<DIR>` entries truncated directory listings: the `>` inside them was read
   as the command prompt. The prompt is a `>` at the start of a line.
@@ -57,6 +69,16 @@ across five suites under AddressSanitizer and UndefinedBehaviorSanitizer.
   pointed outside the file — found by the test that corrupts that field.
 - The Nuklear glyph range was bare ASCII, printing every dash and degree
   sign as `?`.
+- **The Makefile had no header dependency tracking.** Adding a field to a
+  struct in `plat.h` rebuilt some objects and not others, which does not fail
+  to link — it silently reads the wrong fields. It surfaced as the winch page
+  showing the subnet mask where the broadcast address should be. Now built
+  with `-MMD -MP` and the generated `.d` files included.
+- Dialog buttons sat hard against the window's bottom border.
+- Profile x-axis tick labels collided at UI scale 2; labels are now skipped
+  where they would overlap, while every gridline is kept.
+- Multi-line instrument replies were logged with their embedded CR/LF intact
+  and rendered as `?` boxes.
 
 ### Changed
 - Scope reduced: svpview reports cast depth to the winch over UDP :8090 but

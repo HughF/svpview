@@ -20,7 +20,12 @@ OBJ_DIR  = build
 
 WARN    = -Wall -Wextra -Wshadow -Wpointer-arith -Wstrict-prototypes \
           -Wno-unused-parameter
-CFLAGS  = -std=c99 -O2 $(WARN) -I$(SRC_DIR) -Ithird_party
+
+# -MMD -MP generates a .d file per object listing the headers it included.
+# Without this, changing a struct in a header rebuilds only some of the
+# objects that use it and the rest keep the old layout — which does not fail
+# to link, it just silently reads the wrong fields at runtime.
+CFLAGS  = -std=c99 -O2 $(WARN) -MMD -MP -I$(SRC_DIR) -Ithird_party
 LDLIBS  = -lm
 
 # Nuklear's single-header implementation trips these in code we do not own.
@@ -71,6 +76,8 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 
 $(OBJ_DIR):
 	@mkdir -p $(OBJ_DIR)
+
+-include $(OBJS:.o=.d)
 
 # ---------------------------------------------------------------------
 # Tests — always sanitised. A test that only passes without ASan has not

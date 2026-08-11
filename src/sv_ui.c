@@ -61,7 +61,8 @@ static const char *PAGE_NAME[PAGE_COUNT] = {
 };
 
 typedef enum {
-    DLG_NONE = 0, DLG_CONNECT, DLG_SETTINGS, DLG_EXPORT, DLG_PROCESS
+    DLG_NONE = 0, DLG_CONNECT, DLG_SETTINGS, DLG_EXPORT, DLG_PROCESS,
+    DLG_NETWORK
 } SvDialog;
 
 struct SvUi {
@@ -83,6 +84,10 @@ struct SvUi {
     /* connect dialog */
     PlatPortInfo ports[PLAT_MAX_PORTS];
     int      n_ports, sel_port;
+
+    /* network dialog */
+    PlatNetIf nifs[PLAT_MAX_IFS];
+    int      n_nifs, sel_nif;      /* sel_nif < 0 = default route */
 
     /* settings dialog */
     SvConfig cfg;
@@ -755,6 +760,12 @@ static void page_settings(SvUi *ui, struct nk_rect r)
               st->winch == SV_WINCH_REACHABLE ? "reachable"
             : st->winch == SV_WINCH_SILENT    ? "no reply to the last probe"
                                               : "not probed");
+    info_rowf(ui, "Network adapter", "%s%s%s",
+              st->net_if[0] ? st->net_if : "default route",
+              st->net_ip[0] ? "  -  " : "",
+              st->net_ip[0] ? st->net_ip : "");
+    info_row(ui, "Broadcast address",
+             st->net_bcast[0] ? st->net_bcast : "255.255.255.255");
     info_row(ui, "Last message sent",
              st->winch_last[0] ? st->winch_last : "none");
 
@@ -762,6 +773,7 @@ static void page_settings(SvUi *ui, struct nk_rect r)
     nk_layout_row_template_push_static(c, S(ui, LABEL_W));
     nk_layout_row_template_push_static(c, S(ui, 150));
     nk_layout_row_template_push_static(c, S(ui, 190));
+    nk_layout_row_template_push_static(c, S(ui, 170));
     nk_layout_row_template_push_dynamic(c);
     nk_layout_row_template_end(c);
     nk_spacing(c, 1);
@@ -776,6 +788,16 @@ static void page_settings(SvUi *ui, struct nk_rect r)
             snprintf(ui->dlg_error, sizeof ui->dlg_error, "%s", err);
     }
     if (sv_app_cast_count(ui->app) == 0) nk_widget_disable_end(c);
+
+    if (nk_button_label(c, "Select adapter...")) {
+        ui->n_nifs = plat_net_list_ifs(ui->nifs, PLAT_MAX_IFS);
+        ui->sel_nif = -1;
+        for (int i = 0; i < ui->n_nifs; i++)
+            if (st->net_ip[0] && strcmp(ui->nifs[i].ip, st->net_ip) == 0)
+                ui->sel_nif = i;
+        ui->dlg_error[0] = ui->dlg_note[0] = '\0';
+        ui->dialog = DLG_NETWORK;
+    }
     nk_spacing(c, 1);
 }
 
@@ -853,7 +875,7 @@ static void dlg_connect_body(SvUi *ui)
 {
     struct nk_context *c = ui->ctx;
 
-    nk_layout_row_dynamic(c, S(ui, 22), 1);
+    nk_layout_row_dynamic(c, S(ui, 40), 1);
     nk_label_colored_wrap(c,
         "Both the USB cable and the Valeport Bluetooth key appear as serial "
         "ports. 230400 baud, 8N1.", ui->theme->text_dim);
@@ -1178,6 +1200,107 @@ static void dlg_process_commit(SvUi *ui, DlgResult r)
     }
 }
 
+static void dlg_network_body(SvUi *ui)
+{
+    struct nk_context *c = ui->ctx;
+    const SvState *st = sv_app_state(ui->app);
+
+    nk_layout_row_dynamic(c, S(ui, 46), 1);
+    nk_label_colored_wrap(c,
+        "Depth reports are broadcast to the winch on UDP 8090. On a machine "
+        "with more than one adapter, pick the one on the survey network - "
+        "otherwise the report goes out of the wrong port and the winch never "
+        "hears it. Only connected adapters are listed; plug in and rescan.",
+        ui->theme->text_dim);
+
+    gap(ui, 4);
+    section(ui, "Adapters");
+
+    nk_layout_row_dynamic(c, S(ui, 170), 1);
+    if (nk_group_begin(c, "nifs", NK_WINDOW_BORDER)) {
+        nk_layout_row_template_begin(c, S(ui, 22));
+        nk_layout_row_template_push_static(c, S(ui, 140));
+        nk_layout_row_template_push_static(c, S(ui, 130));
+        nk_layout_row_template_push_static(c, S(ui, 130));
+        nk_layout_row_template_push_dynamic(c);
+        nk_layout_row_template_end(c);
+        nk_label_colored(c, "Adapter",   NK_TEXT_LEFT, ui->theme->text_dim);
+        nk_label_colored(c, "Address",   NK_TEXT_LEFT, ui->theme->text_dim);
+        nk_label_colored(c, "Mask",      NK_TEXT_LEFT, ui->theme->text_dim);
+        nk_label_colored(c, "Broadcast", NK_TEXT_LEFT, ui->theme->text_dim);
+
+        for (int i = 0; i < ui->n_nifs; i++) {
+            const PlatNetIf *n = &ui->nifs[i];
+
+            nk_layout_row_dynamic(c, S(ui, 24), 1);
+            nk_bool on = (i == ui->sel_nif);
+            char lab[256];
+            snprintf(lab, sizeof lab, "%-14s  %-15s  %-15s  %s",
+                     n->name, n->ip, n->mask, n->bcast);
+            if (nk_selectable_label(c, lab, NK_TEXT_LEFT, &on) && on)
+                ui->sel_nif = i;
+        }
+
+        if (ui->n_nifs == 0) {
+            nk_layout_row_dynamic(c, S(ui, 36), 1);
+            nk_label_colored_wrap(c,
+                "No connected adapters found. Plug into the survey network "
+                "and press Rescan.", ui->theme->warn);
+        }
+        nk_group_end(c);
+    }
+
+    nk_layout_row_template_begin(c, S(ui, 26));
+    nk_layout_row_template_push_static(c, S(ui, 110));
+    nk_layout_row_template_push_dynamic(c);
+    nk_layout_row_template_end(c);
+    if (nk_button_label(c, "Rescan")) {
+        ui->n_nifs = plat_net_list_ifs(ui->nifs, PLAT_MAX_IFS);
+        if (ui->sel_nif >= ui->n_nifs)
+            ui->sel_nif = -1;
+    }
+    nk_bool def = (ui->sel_nif < 0);
+    nk_checkbox_label(c, "use the default route instead", &def);
+    if (def) ui->sel_nif = -1;
+    else if (ui->sel_nif < 0 && ui->n_nifs > 0) ui->sel_nif = 0;
+
+    gap(ui, 4);
+    info_row(ui, "Currently sending on",
+             st->net_if[0] ? st->net_if : "default route");
+    info_row(ui, "Broadcast address",
+             st->net_bcast[0] ? st->net_bcast : "255.255.255.255");
+}
+
+static bool dlg_network_ready(SvUi *ui)
+{
+    return ui->sel_nif < 0 || ui->sel_nif < ui->n_nifs;
+}
+
+static void dlg_network_commit(SvUi *ui, DlgResult r)
+{
+    if (r == DLG_R_CANCEL) {
+        ui->dialog = DLG_NONE;
+        return;
+    }
+    if (r != DLG_R_APPLY && r != DLG_R_OK)
+        return;
+
+    const PlatNetIf *n = (ui->sel_nif >= 0 && ui->sel_nif < ui->n_nifs)
+                       ? &ui->nifs[ui->sel_nif] : NULL;
+
+    const char *err = sv_app_set_interface(ui->app, n);
+    if (err) {
+        snprintf(ui->dlg_error, sizeof ui->dlg_error, "%s", err);
+        return;
+    }
+
+    ui->dlg_error[0] = '\0';
+    snprintf(ui->dlg_note, sizeof ui->dlg_note, "Broadcasting to %s",
+             n ? n->bcast : "255.255.255.255");
+    if (r == DLG_R_OK)
+        ui->dialog = DLG_NONE;
+}
+
 static const char *dialog_title(SvDialog d)
 {
     switch (d) {
@@ -1185,6 +1308,7 @@ static const char *dialog_title(SvDialog d)
     case DLG_SETTINGS: return "Instrument settings";
     case DLG_EXPORT:   return "Export profile";
     case DLG_PROCESS:  return "Process profile";
+    case DLG_NETWORK:  return "Network adapter";
     default:           return "";
     }
 }
@@ -1196,6 +1320,7 @@ static struct nk_vec2 dialog_size(SvDialog d)
     case DLG_SETTINGS: return nk_vec2(660, 620);
     case DLG_EXPORT:   return nk_vec2(620, 400);
     case DLG_PROCESS:  return nk_vec2(620, 420);
+    case DLG_NETWORK:  return nk_vec2(740, 470);
     default:           return nk_vec2(500, 300);
     }
 }
@@ -1258,6 +1383,7 @@ static void draw_dialog(SvUi *ui, int w, int h)
             case DLG_SETTINGS: dlg_settings_body(ui); break;
             case DLG_EXPORT:   dlg_export_body(ui);   break;
             case DLG_PROCESS:  dlg_process_body(ui);  break;
+            case DLG_NETWORK:  dlg_network_body(ui);  break;
             default: break;
             }
             nk_group_end(c);
@@ -1281,6 +1407,7 @@ static void draw_dialog(SvUi *ui, int w, int h)
             case DLG_SETTINGS: dlg_settings_commit(ui, res); break;
             case DLG_EXPORT:   dlg_export_commit(ui, res);   break;
             case DLG_PROCESS:  dlg_process_commit(ui, res);  break;
+            case DLG_NETWORK:  dlg_network_commit(ui, res);  break;
             default: break;
             }
         }
@@ -1381,6 +1508,7 @@ SvUi *sv_ui_create(SDL_Window *win, SDL_Renderer *ren, SvApp *app)
     ui->proc_downcast = 1;
     ui->proc_despike = 1;
     ui->export_fmt = SV_EXPORT_ASVP;
+    ui->sel_nif = -1;
 
     if (!plat_config_dir(ui->export_dir, sizeof ui->export_dir))
         snprintf(ui->export_dir, sizeof ui->export_dir, ".");

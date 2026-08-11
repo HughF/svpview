@@ -183,6 +183,11 @@ void sv_plot_profile(struct nk_context *ctx, struct nk_rect area,
     const int DIVS = 5;
     int vdec = decimals_for(vr[primary].hi - vr[primary].lo);
 
+    /* Gridlines always; labels only where they will not collide with the one
+     * before. At a high UI scale on a narrow plot there is not room for all
+     * six, and overlapping numbers are worse than fewer of them. */
+    float last_right = -1e9f;
+
     for (int i = 0; i <= DIVS; i++) {
         float fx = in.x + in.w * (float)i / DIVS;
         nk_stroke_line(cb, fx, in.y, fx, in.y + in.h, 1.0f, t->plot_grid);
@@ -196,6 +201,10 @@ void sv_plot_profile(struct nk_context *ctx, struct nk_rect area,
         float lx = fx - w / 2;
         if (lx < area.x) lx = area.x;
         if (lx + w > area.x + area.w) lx = area.x + area.w - w;
+
+        if (lx < last_right + 8 * scale)
+            continue;
+        last_right = lx + w;
 
         draw_text(ctx, cb, lx, in.y + in.h + 6 * scale,
                   w + 2, ctx->style.font->height, lab, t->text_dim);
