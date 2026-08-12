@@ -2,6 +2,7 @@
 #include "sv_binfile.h"
 #include "sv_profile.h"
 #include "sv_ocean.h"
+#include "sv_geo.h"
 #include "sv_vigo.h"
 #include "sv_sim.h"
 
@@ -352,6 +353,46 @@ static void step_complete(SvApp *a, const char *body)
 /* Receive pump                                                        */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Add a fix to the chart's track, if it is a new one.
+ *
+ * The instrument broadcasts a status every 10 s whether it has moved or not,
+ * so storing every one would fill the buffer with a single point while the
+ * profiler sat on deck. Anything closer than SV_TRACK_MIN_M to the last kept
+ * fix is dropped.
+ *
+ * The threshold is deliberately larger than it looks like it needs to be:
+ * $PVBB carries latitude and longitude to four decimal places, which is about
+ * 11 m of latitude, so a stationary instrument whose GPS wanders across a cell
+ * boundary reports two positions 11 m apart for ever. Below that figure the
+ * track would fill with jitter that looks like movement.
+ */
+#define SV_TRACK_MIN_M 15.0
+
+static void record_fix(SvApp *a, const SvStatus *s)
+{
+    if (!s->has_fix || !sv_geo_valid(s->lat, s->lon))
+        return;
+
+    if (a->st.track_n > 0) {
+        const SvFix *last = &a->st.track[a->st.track_n - 1];
+        if (sv_geo_distance_m(last->lat, last->lon, s->lat, s->lon)
+            < SV_TRACK_MIN_M)
+            return;
+    }
+
+    if (a->st.track_n == SV_TRACK_CAP) {
+        memmove(&a->st.track[0], &a->st.track[1],
+                (SV_TRACK_CAP - 1) * sizeof a->st.track[0]);
+        a->st.track_n--;
+    }
+
+    a->st.track[a->st.track_n].lat = s->lat;
+    a->st.track[a->st.track_n].lon = s->lon;
+    a->st.track[a->st.track_n].ms  = plat_now_ms();
+    a->st.track_n++;
+}
+
 static void handle_run_bytes(SvApp *a)
 {
     /* Split on newlines and parse each complete sentence. */
@@ -371,6 +412,7 @@ static void handle_run_bytes(SvApp *a)
                     a->st.status = m.status;
                     a->st.status_valid = true;
                     a->st.status_ms = plat_now_ms();
+                    record_fix(a, &m.status);
                 } else if (m.kind == SV_MSG_DATA) {
                     if (a->st.live_n == SV_LIVE_CAP) {
                         memmove(&a->st.live[0], &a->st.live[1],

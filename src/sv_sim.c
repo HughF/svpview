@@ -38,6 +38,14 @@ struct SvSim {
     SimSettings set;
     int    cast_counter;
     double battery_hours;
+
+    /* Simulated vessel: a survey line at 4 kn, gently turning, so successive
+     * casts are at different positions and the chart has real geometry to
+     * draw. Integrated here rather than derived from a formula so the
+     * broadcast position and the position written into a downloaded file are
+     * necessarily the same one. */
+    double lat, lon, course_deg;
+    unsigned long last_move_ms;
 };
 
 /* ------------------------------------------------------------------ */
@@ -129,8 +137,10 @@ static void sim_send_file(SvSim *s)
     bin_bcd(&p, 8);  bin_bcd(&p, 11);
     bin_bcd(&p, 10); bin_bcd(&p, 54); bin_bcd(&p, 36);
 
-    bin_f32(&p, 50.4264f);
-    bin_f32(&p, -3.6814f);
+    /* The position the vessel is at now — the file header carries a 32-bit
+     * float, so this is the finer of the app's two position sources. */
+    bin_f32(&p, (float)s->lat);
+    bin_f32(&p, (float)s->lon);
     bin_f32(&p, 46236.0f);
     bin_str(&p, "0650735A9 Jun 29 2018 12:09", 35);
     bin_pad(&p, 3);
@@ -196,11 +206,53 @@ static void sim_send_file(SvSim *s)
 /* Command handling                                                    */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Advance the simulated vessel.
+ *
+ * The metres-per-degree constants are written out here rather than taken from
+ * sv_geo, for the same reason the sound speed above is inlined: the emulator
+ * must not share arithmetic with the code under test, or a test can pass
+ * because both sides made the same mistake.
+ */
+static void sim_move(SvSim *s, unsigned long now)
+{
+    if (s->last_move_ms == 0) {
+        s->last_move_ms = now;
+        return;
+    }
+
+    double dt = (double)(now - s->last_move_ms) / 1000.0;
+    if (dt <= 0.0)
+        return;
+    s->last_move_ms = now;
+
+    const double speed_ms = 4.0 * 1852.0 / 3600.0;         /* 4 knots */
+    double dist = speed_ms * dt;
+
+    s->course_deg += 0.35 * dt;                            /* a slow turn */
+    if (s->course_deg >= 360.0)
+        s->course_deg -= 360.0;
+
+    double rad = s->course_deg * 3.14159265358979323846 / 180.0;
+    double m_per_deg_lat = 111320.0;
+    double m_per_deg_lon = 111320.0 * cos(s->lat * 3.14159265358979323846 / 180.0);
+
+    s->lat += dist * cos(rad) / m_per_deg_lat;
+    if (m_per_deg_lon > 1.0)
+        s->lon += dist * sin(rad) / m_per_deg_lon;
+}
+
 static void status_broadcast(SvSim *s)
 {
     char body[160];
+
+    /* Four decimal places, which is what the integration guide's own example
+     * sentence carries — about 11 m of latitude. The chart's live track can be
+     * no finer than this, and pretending otherwise here would hide a real
+     * limitation of the instrument's broadcast. */
     snprintf(body, sizeof body,
-             "PVBB,00102532,46236,50.4264,-3.6814,%.2f,260811105436,%d,",
+             "PVBB,00102532,46236,%.4f,%.4f,%.2f,260811105436,%d,",
+             s->lat, s->lon,
              s->battery_hours, s->cast_counter > 0 ? 1 : 1);
 
     emitf(s, "$%s*%02X\r\n", body, sv_nmea_checksum(body, strlen(body)));
@@ -318,6 +370,9 @@ SvSim *sv_sim_create(void)
     s->set.auto_power = 120;
     snprintf(s->set.site, sizeof s->set.site, "Simulated site");
     s->battery_hours = 61.6;
+    s->lat = 50.4264;                  /* Torbay, as in the guide's example */
+    s->lon = -3.6814;
+    s->course_deg = 65.0;
     return s;
 }
 
@@ -371,6 +426,10 @@ void sv_sim_tick(SvSim *s, unsigned long now)
 {
     if (s->boot_ms == 0)
         s->boot_ms = now;
+
+    /* The vessel keeps moving while the instrument is at the command prompt —
+     * that is exactly when the operator is downloading the last cast. */
+    sim_move(s, now);
 
     if (s->interrupted)
         return;                      /* silent at the command prompt */

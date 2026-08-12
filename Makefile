@@ -45,8 +45,8 @@ SDL_LIBS   := $(shell sdl2-config --libs 2>/dev/null)
 # ---------------------------------------------------------------------
 
 # Portable core plus the app: no SDL, and the unit tests link against these.
-CORE = sv_ocean sv_proto sv_binfile sv_profile sv_export sv_vigo sv_config \
-       sv_sim sv_app
+CORE = sv_ocean sv_geo sv_proto sv_binfile sv_profile sv_export sv_vigo \
+       sv_config sv_sim sv_app
 
 ifeq ($(OS),Windows_NT)
     PLAT = plat_win32
@@ -54,13 +54,13 @@ else
     PLAT = plat_posix
 endif
 
-UI   = sv_theme sv_plot sv_ui sv_main
+UI   = sv_theme sv_plot sv_chart sv_ui sv_main
 
 OBJS = $(addprefix $(OBJ_DIR)/,$(addsuffix .o,$(CORE) $(PLAT) $(UI)))
 
 TARGET = svpview
 
-TESTS = test_ocean test_proto test_binfile test_vigo test_profile
+TESTS = test_ocean test_geo test_proto test_binfile test_vigo test_profile
 
 # ---------------------------------------------------------------------
 
@@ -92,7 +92,7 @@ else
     TEST_CFLAGS += -D_DEFAULT_SOURCE
 endif
 
-TEST_SRCS = $(SRC_DIR)/sv_ocean.c $(SRC_DIR)/sv_proto.c \
+TEST_SRCS = $(SRC_DIR)/sv_ocean.c $(SRC_DIR)/sv_geo.c $(SRC_DIR)/sv_proto.c \
             $(SRC_DIR)/sv_binfile.c $(SRC_DIR)/sv_profile.c \
             $(SRC_DIR)/sv_export.c $(SRC_DIR)/sv_vigo.c \
             $(SRC_DIR)/sv_config.c

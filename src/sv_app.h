@@ -18,6 +18,7 @@
 
 #define SV_MAX_CASTS   24
 #define SV_LIVE_CAP    900         /* 15 minutes at 1 Hz */
+#define SV_TRACK_CAP   2000        /* recorded fixes; see SV_TRACK_MIN_M */
 #define SV_LOG_LINES   400
 #define SV_LOG_WIDTH   200
 #define SV_MAX_DIR     128
@@ -52,6 +53,12 @@ typedef struct {
     long   size;
 } SvFileRow;
 
+/* One recorded position from a status broadcast, for the chart's track. */
+typedef struct {
+    double   lat, lon;
+    uint64_t ms;                   /* when it arrived, monotonic         */
+} SvFix;
+
 typedef struct SvApp SvApp;
 
 /* ------------------------------------------------------------------ */
@@ -80,6 +87,13 @@ typedef struct {
 
     SvLive      live[SV_LIVE_CAP];
     int         live_n;
+
+    /* Where the instrument has been, oldest first, for the chart. Only fixes
+     * that actually moved are kept — a profiler sitting on deck broadcasts
+     * the same position for hours and would otherwise fill the buffer with
+     * one point. */
+    SvFix       track[SV_TRACK_CAP];
+    int         track_n;
 
     SvFileRow   files[SV_MAX_DIR];
     int         n_files;
