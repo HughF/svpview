@@ -38,6 +38,7 @@
 #include "sv_profile.h"
 #include "sv_export.h"
 #include "sv_vigo.h"
+#include "sv_version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,7 +69,7 @@ static const char *PAGE_NAME[PAGE_COUNT] = {
 
 typedef enum {
     DLG_NONE = 0, DLG_CONNECT, DLG_SETTINGS, DLG_EXPORT, DLG_PROCESS,
-    DLG_NETWORK
+    DLG_NETWORK, DLG_ABOUT
 } SvDialog;
 
 struct SvUi {
@@ -118,6 +119,8 @@ struct SvUi {
     /* dialog auto-sizing */
     SvDialog dlg_measured;
     float    dlg_natural_h;
+
+    char     title[192];       /* last title pushed to the window manager */
 };
 
 /* ------------------------------------------------------------------ */
@@ -366,6 +369,12 @@ static void draw_rail(SvUi *ui, struct nk_rect r)
         }
 
         gap(ui, 10);
+        nk_layout_row_dynamic(c, S(ui, 30), 1);
+        if (nk_button_label(c, "About...")) {
+            ui->dlg_error[0] = ui->dlg_note[0] = '\0';
+            ui->dialog = DLG_ABOUT;
+        }
+
         nk_layout_row_dynamic(c, S(ui, 30), 1);
         if (nk_button_label(c, ui->dark ? "Light theme" : "Dark theme")) {
             ui->dark = !ui->dark;
@@ -1371,6 +1380,57 @@ static void dlg_network_commit(SvUi *ui, DlgResult r)
         ui->dialog = DLG_NONE;
 }
 
+static void dlg_about_body(SvUi *ui)
+{
+    struct nk_context *c = ui->ctx;
+    const SvState *st = sv_app_state(ui->app);
+
+    nk_layout_row_dynamic(c, S(ui, 26), 1);
+    nk_label_colored(c, SVPVIEW_NAME "  " SVPVIEW_VERSION, NK_TEXT_LEFT,
+                     ui->theme->accent);
+
+    nk_layout_row_dynamic(c, S(ui, 20), 1);
+    nk_label_colored(c, SVPVIEW_TAGLINE, NK_TEXT_LEFT, ui->theme->text);
+
+    gap(ui, 6);
+    nk_layout_row_dynamic(c, S(ui, 46), 1);
+    nk_label_colored_wrap(c,
+        "Configures a Valeport SWiFT SVP, CTD or SWiFTplus, downloads and "
+        "plots its casts, exports to the survey formats, and reports each "
+        "cast's achieved depth to a C-MAX Vigo winch. It replaces Valeport "
+        "Ocean and VigoDepthRelay.", ui->theme->text_dim);
+
+    gap(ui, 6);
+    section(ui, "This build");
+
+    info_row(ui, "Version", SVPVIEW_VERSION);
+    info_row(ui, "Built", __DATE__ " " __TIME__);
+
+    SDL_version linked;
+    SDL_GetVersion(&linked);
+    info_rowf(ui, "SDL", "%d.%d.%d at runtime, built against %d.%d.%d",
+              linked.major, linked.minor, linked.patch,
+              SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
+    info_row(ui, "Interface", "Nuklear, vendored in third_party/");
+    info_rowf(ui, "UI scale", "%.2f  (override with SVPVIEW_SCALE)",
+              (double)ui->scale);
+
+    gap(ui, 6);
+    section(ui, "Instrument");
+
+    info_row(ui, "Port", st->port[0] ? st->port : "not connected");
+    info_row(ui, "Serial number", st->serial[0] ? st->serial : "-");
+    info_row(ui, "Firmware", st->firmware[0] ? st->firmware : "-");
+
+    gap(ui, 6);
+    section(ui, "Reference");
+
+    nk_layout_row_dynamic(c, S(ui, 32), 1);
+    nk_label_colored_wrap(c,
+        "Protocol: SWiFT Integration Guide MANUAL-68251662-19 issue 2.1. "
+        "Winch: UDP 8090, see docs/VIGO_INTERFACE.md.", ui->theme->text_faint);
+}
+
 static const char *dialog_title(SvDialog d)
 {
     switch (d) {
@@ -1379,6 +1439,7 @@ static const char *dialog_title(SvDialog d)
     case DLG_EXPORT:   return "Export profile";
     case DLG_PROCESS:  return "Process profile";
     case DLG_NETWORK:  return "Network adapter";
+    case DLG_ABOUT:    return "About " SVPVIEW_NAME;
     default:           return "";
     }
 }
@@ -1396,6 +1457,7 @@ static struct nk_vec2 dialog_size(SvDialog d)
     case DLG_EXPORT:   return nk_vec2(620, 380);
     case DLG_PROCESS:  return nk_vec2(620, 400);
     case DLG_NETWORK:  return nk_vec2(760, 440);
+    case DLG_ABOUT:    return nk_vec2(620, 520);
     default:           return nk_vec2(500, 300);
     }
 }
@@ -1489,6 +1551,7 @@ static void draw_dialog(SvUi *ui, int w, int h)
             case DLG_EXPORT:   dlg_export_body(ui);   break;
             case DLG_PROCESS:  dlg_process_body(ui);  break;
             case DLG_NETWORK:  dlg_network_body(ui);  break;
+            case DLG_ABOUT:    dlg_about_body(ui);    break;
             default: break;
             }
 
@@ -1526,7 +1589,21 @@ static void draw_dialog(SvUi *ui, int w, int h)
         default: break;
         }
 
-        DlgResult res = dialog_buttons(ui, ready);
+        DlgResult res;
+        if (ui->dialog == DLG_ABOUT) {
+            /* One button, because Apply and Cancel have nothing to act on in
+             * a dialog that changes nothing. */
+            nk_layout_row_template_begin(c, S(ui, BTN_H));
+            nk_layout_row_template_push_dynamic(c);
+            nk_layout_row_template_push_static(c, S(ui, BTN_W));
+            nk_layout_row_template_end(c);
+            nk_spacing(c, 1);
+            res = primary_button(ui, "OK") ? DLG_R_OK : DLG_R_NONE;
+            if (res == DLG_R_OK)
+                ui->dialog = DLG_NONE;
+        } else {
+            res = dialog_buttons(ui, ready);
+        }
         if (res != DLG_R_NONE) {
             switch (ui->dialog) {
             case DLG_CONNECT:  dlg_connect_commit(ui, res);  break;
@@ -1551,9 +1628,37 @@ static void draw_dialog(SvUi *ui, int w, int h)
 /* Shell                                                               */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Keep the window-manager title current: the version so a screenshot or a
+ * support call identifies the build, and the instrument so an operator with
+ * two profilers open can tell the windows apart from the taskbar.
+ */
+static void update_title(SvUi *ui)
+{
+    const SvState *st = sv_app_state(ui->app);
+    char want[192];
+
+    if (st->serial[0])
+        snprintf(want, sizeof want, "%s %s  -  SWiFT %.32s on %.80s",
+                 SVPVIEW_NAME, SVPVIEW_VERSION, st->serial, st->port);
+    else if (st->port[0])
+        snprintf(want, sizeof want, "%s %s  -  %.120s",
+                 SVPVIEW_NAME, SVPVIEW_VERSION, st->port);
+    else
+        snprintf(want, sizeof want, "%s %s  -  %s",
+                 SVPVIEW_NAME, SVPVIEW_VERSION, SVPVIEW_TAGLINE);
+
+    if (strcmp(want, ui->title) != 0) {
+        snprintf(ui->title, sizeof ui->title, "%s", want);
+        SDL_SetWindowTitle(ui->win, ui->title);
+    }
+}
+
 void sv_ui_frame(SvUi *ui, int w, int h)
 {
     struct nk_context *c = ui->ctx;
+
+    update_title(ui);
 
     float sh = S(ui, STATUS_H);
     float ah = S(ui, ACTION_H);

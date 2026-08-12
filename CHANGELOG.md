@@ -52,6 +52,13 @@ across five suites under AddressSanitizer and UndefinedBehaviorSanitizer.
   adapter picker is a row taller when a second adapter appears and no dialog
   hides its own controls behind a scrollbar.
 - Deploy-flag failures are explained in the operator's terms, not as a code.
+- Window title carries the version and, once connected, the instrument and
+  port — so a screenshot identifies the build and two profilers open at once
+  can be told apart from the taskbar.
+- About dialog (nav rail): version, build stamp, SDL versions at runtime and
+  at compile time, UI scale, the connected instrument, and the protocol
+  reference. Single OK button, since Apply and Cancel have nothing to act on
+  in a dialog that changes nothing.
 - The log page follows the newest line, but stops following the moment the
   operator scrolls up and resumes when they scroll back to the bottom —
   having the view yanked back mid-read makes the page useless during a

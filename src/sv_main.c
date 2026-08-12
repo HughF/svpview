@@ -13,14 +13,15 @@
 
 #include "sv_app.h"
 #include "sv_ui.h"
+#include "sv_version.h"
 
 #define WIN_W 1280
 #define WIN_H  820
 
 static void usage(void)
 {
-    printf("svpview — Valeport SWiFT profiler acquisition and display\n\n"
-           "  svpview [options]\n\n"
+    printf("%s %s — %s\n\n", SVPVIEW_NAME, SVPVIEW_VERSION, SVPVIEW_TAGLINE);
+    printf("  svpview [options]\n\n"
            "  --sim          run against a simulated instrument\n"
            "  --open FILE    load a .bin logged file at startup\n"
            "  --help         this message\n\n"
@@ -55,8 +56,11 @@ int main(int argc, char **argv)
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "best");
 
+    /* The interface keeps this current as the instrument connects; this is
+     * only what shows before the first frame. */
     SDL_Window *win = SDL_CreateWindow(
-        "svpview", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        SVPVIEW_NAME " " SVPVIEW_VERSION "  -  " SVPVIEW_TAGLINE,
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         WIN_W, WIN_H,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!win) {
