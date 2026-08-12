@@ -15,8 +15,11 @@
 #include "sv_ui.h"
 #include "sv_version.h"
 
-#define WIN_W 1280
-#define WIN_H  820
+/* The size the layout is designed for at UI scale 1. sv_ui_fit_window()
+ * turns it into the actual opening size once the UI knows the display's
+ * scale, so this is not what a HiDPI screen ends up with. */
+#define BASE_W 1280
+#define BASE_H  820
 
 static void usage(void)
 {
@@ -56,13 +59,16 @@ int main(int argc, char **argv)
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "best");
 
-    /* The interface keeps this current as the instrument connects; this is
-     * only what shows before the first frame. */
+    /* Created hidden and shown after the interface has sized it, so the
+     * window doesn't visibly jump from the base size to its real one.
+     *
+     * The interface keeps the title current as the instrument connects; this
+     * is only what shows before the first frame. */
     SDL_Window *win = SDL_CreateWindow(
         SVPVIEW_NAME " " SVPVIEW_VERSION "  -  " SVPVIEW_TAGLINE,
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        WIN_W, WIN_H,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        BASE_W, BASE_H,
+        SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!win) {
         fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
         SDL_Quit();
@@ -100,6 +106,9 @@ int main(int argc, char **argv)
         SDL_Quit();
         return 1;
     }
+
+    sv_ui_fit_window(ui, BASE_W, BASE_H);
+    SDL_ShowWindow(win);
 
     if (simulate)
         sv_app_connect(app, "sim");

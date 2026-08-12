@@ -9,6 +9,12 @@ typedef struct SvUi SvUi;
 SvUi *sv_ui_create(SDL_Window *win, SDL_Renderer *ren, SvApp *app);
 void  sv_ui_destroy(SvUi *ui);
 
+/* Resize and recentre the window for the display it opened on. base_w/base_h
+ * are the size the layout is designed for at UI scale 1; the UI knows the
+ * scale actually in force, so only it can turn that into a sensible window.
+ * Also sets the minimum size, below which the fixed regions stop fitting. */
+void  sv_ui_fit_window(SvUi *ui, int base_w, int base_h);
+
 /* Bracket the SDL event pump; every event goes to sv_ui_handle_event()
  * between these two calls. */
 void  sv_ui_input_begin(SvUi *ui);

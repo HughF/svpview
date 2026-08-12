@@ -58,6 +58,16 @@
  * against the window border and read as clipped. */
 #define DLG_BOTTOM_MARGIN 12.0f
 
+/* Smallest window the layout still works in, at UI scale 1. The width comes
+ * from the status strip: its fixed columns add up to 900, and narrower than
+ * this the deploy column is squeezed until "NOT ready to deploy" is cut off
+ * mid-word — the one line in the program that must never be misread. */
+#define WIN_MIN_W 1120
+#define WIN_MIN_H 640
+
+/* Fraction of the desktop's usable area a default-sized window may occupy. */
+#define WIN_MAX_FRAC 0.85f
+
 typedef enum {
     PAGE_LIVE = 0, PAGE_PROFILE, PAGE_FILES, PAGE_SETTINGS, PAGE_LOG,
     PAGE_COUNT
@@ -1789,6 +1799,60 @@ SvUi *sv_ui_create(SDL_Window *win, SDL_Renderer *ren, SvApp *app)
 
     sv_theme_apply(ui->ctx, ui->theme, ui->scale);
     return ui;
+}
+
+void sv_ui_fit_window(SvUi *ui, int base_w, int base_h)
+{
+    if (!ui)
+        return;
+
+    /* Every metric in the layout is written at scale 1 and multiplied by
+     * ui->scale as it is drawn, so a window left at the base size leaves the
+     * interface only base/scale of usable room — half of it on a 192 dpi
+     * panel, which is what "opens very small" looks like. Ask for
+     * base * scale physical pixels.
+     *
+     * SDL_SetWindowSize speaks window units: pixels on X11 and Windows, but
+     * points on a Retina Mac, where the window system has already applied the
+     * factor. Dividing by the drawable/window ratio covers both — on the Mac
+     * it cancels the scale back out and the window stays base-sized. */
+    int ww = 0, wh = 0, dw = 0, dh = 0;
+    SDL_GetWindowSize(ui->win, &ww, &wh);
+    SDL_GetRendererOutputSize(ui->ren, &dw, &dh);
+    float px_per_unit = (ww > 0 && dw > 0) ? (float)dw / (float)ww : 1.0f;
+
+    float unit_scale = ui->scale / px_per_unit;
+    float w = (float)base_w * unit_scale;
+    float h = (float)base_h * unit_scale;
+
+    /* Keep inside the area the desktop actually leaves free, so the window
+     * doesn't open with its action bar behind a panel or off the bottom of the
+     * screen. One shrink factor for both axes, so the proportions hold. */
+    SDL_Rect usable;
+    if (SDL_GetDisplayUsableBounds(SDL_GetWindowDisplayIndex(ui->win),
+                                   &usable) == 0 &&
+        usable.w > 0 && usable.h > 0) {
+        float max_w = (float)usable.w * WIN_MAX_FRAC;
+        float max_h = (float)usable.h * WIN_MAX_FRAC;
+        float shrink = 1.0f;
+        if (w > max_w)
+            shrink = max_w / w;
+        if (h > max_h && max_h / h < shrink)
+            shrink = max_h / h;
+        w *= shrink;
+        h *= shrink;
+    }
+
+    int min_w = (int)((float)WIN_MIN_W * unit_scale);
+    int min_h = (int)((float)WIN_MIN_H * unit_scale);
+    SDL_SetWindowMinimumSize(ui->win, min_w, min_h);
+
+    if (w < (float)min_w) w = (float)min_w;
+    if (h < (float)min_h) h = (float)min_h;
+
+    SDL_SetWindowSize(ui->win, (int)w, (int)h);
+    SDL_SetWindowPosition(ui->win, SDL_WINDOWPOS_CENTERED,
+                          SDL_WINDOWPOS_CENTERED);
 }
 
 void sv_ui_destroy(SvUi *ui)

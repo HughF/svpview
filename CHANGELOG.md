@@ -64,6 +64,21 @@ across five suites under AddressSanitizer and UndefinedBehaviorSanitizer.
   having the view yanked back mid-read makes the page useless during a
   download.
 
+### Fixed — opening window size on a HiDPI display
+- The window opened at the layout's design size of 1280x820 *pixels*, but every
+  metric in the layout is multiplied by the UI scale as it is drawn, so on a
+  192 dpi panel the interface had only 640x410 of room to work in and the
+  window covered a tenth of the screen. The opening size is now the design
+  size multiplied by the scale in force — 2560x1640 on this display — clamped
+  to 85% of the desktop's *usable* bounds so it cannot open with its action bar
+  behind a panel. Converting through the drawable/window-size ratio keeps a
+  Retina Mac at 1280x820 points, where the window system applies the factor
+  itself and multiplying again would double-count it.
+- A minimum window size is set, from the width the status strip needs before
+  "NOT ready to deploy" starts being cut off mid-word.
+- The window is created hidden and shown once it has been sized, so it no
+  longer visibly jumps from the base size to its real one at startup.
+
 ### Added — network adapter selection
 - Settings → Select adapter… lists the machine's **connected** broadcast-capable
   adapters with address, mask and the broadcast that will be used, and binds
