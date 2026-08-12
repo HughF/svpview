@@ -1,4 +1,16 @@
 /*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Hugh Frater
+ *
+ * This file is part of svpview. svpview is free software: you can
+ * redistribute it and/or modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. It is distributed in
+ * the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
+ * implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License in LICENSE for details.
+ */
+/*
  * sv_ui.c — window shell, pages and dialogs
  *
  * Layout rule that keeps everything aligned: the shell computes an exact
@@ -1716,7 +1728,6 @@ static void dlg_about_body(SvUi *ui)
     info_rowf(ui, "SDL", "%d.%d.%d at runtime, built against %d.%d.%d",
               linked.major, linked.minor, linked.patch,
               SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
-    info_row(ui, "Interface", "Nuklear, vendored in third_party/");
     info_rowf(ui, "UI scale", "%.2f  (override with SVPVIEW_SCALE)",
               (double)ui->scale);
 
@@ -1728,12 +1739,21 @@ static void dlg_about_body(SvUi *ui)
     info_row(ui, "Firmware", st->firmware[0] ? st->firmware : "-");
 
     gap(ui, 6);
-    section(ui, "Reference");
+    section(ui, "Licence");
 
-    nk_layout_row_dynamic(c, S(ui, 32), 1);
+    /* The GPL's own "How to Apply" note asks a GUI program to show the short
+     * notice somewhere the user can find it; an about box is where it says to
+     * put it. */
+    info_row(ui, "Licence", "GPL-3.0-or-later");
+    info_row(ui, "Copyright", "(C) 2026 Hugh Frater");
+
+    nk_layout_row_dynamic(c, S(ui, 44), 1);
     nk_label_colored_wrap(c,
-        "Protocol: SWiFT Integration Guide MANUAL-68251662-19 issue 2.1. "
-        "Winch: UDP 8090, see docs/VIGO_INTERFACE.md.", ui->theme->text_faint);
+        "Free software with ABSOLUTELY NO WARRANTY; redistributable under the "
+        "GNU General Public License v3 or later - see LICENSE. Nuklear, in "
+        "third_party/, is MIT or public domain; SDL2 is zlib-licensed. "
+        "Protocol: SWiFT Integration Guide MANUAL-68251662-19 issue 2.1.",
+        ui->theme->text_faint);
 }
 
 static const char *dialog_title(SvDialog d)

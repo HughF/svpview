@@ -129,6 +129,18 @@ across five suites under AddressSanitizer and UndefinedBehaviorSanitizer.
   `NK_WINDOW_NO_SCROLLBAR`. Each page now starts at its top. Found while
   taking documentation screenshots, not by a test.
 
+### Added — licence
+- **GPL-3.0-or-later**, copyright (C) 2026 Hugh Frater. Full text in `LICENSE`,
+  the SPDX identifier and short notice at the top of every source file, and the
+  notice in the About box, which is where the GPL's own "How to Apply" section
+  asks a GUI program to put it.
+- Version 3 or later because nothing svpview links forces otherwise: SDL2 is
+  zlib and the vendored Nuklear is MIT or public domain, both GPL-compatible.
+- `third_party/README.md` records what is vendored, under which licence, and
+  the one local modification carried against upstream (the hard-coded vertex
+  index size in `nuklear_sdl_renderer.h`) so a future re-vendor does not
+  silently drop it.
+
 ### Added — documentation
 - `docs/svpview_Design_and_Features.{html,pdf}` — an illustrated tour of the
   application and the reasoning behind it: the six pages with screenshots, the

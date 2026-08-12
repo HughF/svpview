@@ -112,6 +112,7 @@
     <div><span class="k">Language</span><span class="v">C99 &mdash; 8&nbsp;441 lines, one dependency (SDL2)</span></div>
     <div><span class="k">Platforms</span><span class="v">Linux, macOS, Windows <span class="muted">(Win32 layer outstanding)</span></span></div>
     <div><span class="k">Repository</span><span class="v mono">C&#8209;MAX/src/svpview</span></div>
+    <div><span class="k">Licence</span><span class="v">GPL&#8209;3.0&#8209;or&#8209;later</span></div>
     <div><span class="k">Date</span><span class="v">12 August 2026</span></div>
   </div>
   <span class="badge">Engineering working document &mdash; simulator&#8209;proven, not yet hardware&#8209;proven</span>
@@ -326,7 +327,8 @@
       <figure style="margin-top:0">
         <img src="img/about_dialog.png" alt="svpview About dialog">
         <figcaption><b>Figure 6.</b> About &mdash; one OK button, because Apply and Cancel have nothing to act on
-        in a dialog that changes nothing.</figcaption>
+        in a dialog that changes nothing. The licence notice is here because that is where the GPL&rsquo;s own
+        &ldquo;How to Apply&rdquo; section asks a program with a GUI to put it.</figcaption>
       </figure>
     </div>
   </div>
@@ -684,14 +686,19 @@ SVPVIEW_SCALE=1 ./svpview    <span class="c"># override the detected HiDPI scale
     <tr><th style="width:34%">File</th><th>Contents</th></tr>
     <tr><td class="mono">ARCHITECTURE.md</td><td>layers, threading rationale, crash&#8209;resistance, known unknowns</td></tr>
     <tr><td class="mono">ROADMAP.md</td><td>nine phases with what is done and what needs hardware</td></tr>
+    <tr><td class="mono">LICENSE</td><td>GNU General Public License v3 &mdash; the whole program is under it</td></tr>
+    <tr><td class="mono">third_party/README.md</td><td>what is vendored, its licences, and the one local fix carried against upstream</td></tr>
     <tr><td class="mono">CHANGELOG.md</td><td>the source of truth for release notes, including the bugs found during bring&#8209;up</td></tr>
     <tr><td class="mono">docs/SWIFT_PROTOCOL.md</td><td>commands, sentences, the binary header variants</td></tr>
     <tr><td class="mono">docs/VIGO_INTERFACE.md</td><td>the winch messages, the silent&#8209;drop rules, and the API not used</td></tr>
   </table>
 
   <div class="footer-note">
-    svpview 2026.08.12 &middot; C&#8209;MAX Sonar Systems &middot; document generated 12 August 2026.
-    Screenshots are of the running application at UI scale 2 against the built&#8209;in simulator.
+    svpview 2026.08.12 &middot; document generated 12 August 2026. Screenshots are of the running
+    application at UI scale 2 against the built&#8209;in simulator.
+    <br>svpview is free software under the GNU General Public License, version 3 or later, and comes with
+    ABSOLUTELY NO WARRANTY. Copyright &copy; 2026 Hugh Frater. SDL2 is zlib&#8209;licensed; the vendored
+    Nuklear is MIT or public domain.
   </div>
 </section>
 

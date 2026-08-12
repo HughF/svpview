@@ -140,6 +140,18 @@ cannot afford. There are no locks anywhere.
   test. It computes its own sound speed and its own vessel motion, so a test
   cannot pass because both sides made the same mistake.
 
+## Licence
+
+**GPL-3.0-or-later.** Copyright (C) 2026 Hugh Frater. The full text is in
+[LICENSE](LICENSE); every source file carries the SPDX identifier and the short
+notice, and the About box states it in the program itself.
+
+Version 3 or later was chosen because nothing svpview links forces otherwise:
+SDL2 is zlib-licensed and the vendored Nuklear is MIT or public domain, both
+GPL-compatible. See [third_party/README.md](third_party/README.md) for what is
+vendored, under which licence, and the one local modification carried against
+upstream.
+
 ## Related projects
 
 - `../Vigo` — the winch controller this reports to

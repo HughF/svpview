@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Hugh Frater
+#
 # svpview — Valeport SWiFT profiler acquisition and display
 #
 #   make            build ./svpview
