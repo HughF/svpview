@@ -1,8 +1,11 @@
 # svpview — implementation roadmap
 
-> **Status 2026-08-11:** phases 0, 1, 4, 5 and 6 are implemented and the
+> **Status 2026-08-12:** phases 0, 1, 4, 5 and 6 are implemented and the
 > program runs; phase 2 and 3 are implemented against the simulator and
-> await a real instrument. See CHANGELOG.md for what actually landed.
+> await a real instrument. Phase 4 has since grown a Chart page (cast
+> positions in plan) that was not in the original plan. See CHANGELOG.md for
+> what actually landed, and docs/svpview_Design_and_Features.html for the
+> illustrated tour.
 
 Nine phases. Each ends with something runnable and tested; no phase depends on
 hardware that is not already on the bench, except where marked **HW**.
@@ -77,6 +80,8 @@ and an interrupted download resumes.
 ## Phase 4 — Display (2 days)
 
 - `sv_plot.c`: profile plot, multi-cast overlay, cursor readout, zoom/pan
+- `sv_chart.c` + `sv_geo.c`: cast positions in plan, graticule, track, scale
+  bar, range and bearing — no basemap imagery, by decision
 - Live continuous-mode trace
 - `sv_theme.c` dark/light palette, HiDPI scaling
 - Status strip with deploy-flag diagnosis (§3 of the protocol doc)

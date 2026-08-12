@@ -157,12 +157,29 @@ static float S(const SvUi *ui, float v) { return v * ui->scale; }
  */
 static float plot_row_height(SvUi *ui, struct nk_rect page)
 {
-    float rows    = S(ui, ROW_H) * 2.0f + S(ui, 4) * 2.0f;
-    float spacing = ui->ctx->style.window.spacing.y * 4.0f;
-    float h = page.h - rows - spacing;
+    struct nk_context *c = ui->ctx;
+
+    /*
+     * Height for a plot that fills the rest of the page.
+     *
+     * Measured from where the layout cursor has actually reached, because the
+     * spacing between rows is the style's business and not this page's. The
+     * page's summary line goes *above* the plot rather than below it: a row
+     * placed after a full-height plot lands beyond the panel's clip — which
+     * nk_window_get_content_region does not account for — and Nuklear drops
+     * such a row entirely instead of clipping it, so it silently vanishes.
+     * Nothing follows the plot now, and the bottom padding is all that has to
+     * be left free.
+     */
+    nk_layout_row_dynamic(c, 0.0f, 1);
+    float top = nk_layout_widget_bounds(c).y;
+
+    float h = page.y + page.h - top
+            - c->style.window.spacing.y
+            - c->style.window.padding.y * 2.0f;
 
     if (h < S(ui, 100))
-        h = page.h * 0.7f;
+        h = page.h * 0.6f;
     return h;
 }
 
@@ -564,7 +581,26 @@ static void page_profile(SvUi *ui, struct nk_rect r)
         ui->dlg_error[0] = ui->dlg_note[0] = '\0';
     }
 
-    gap(ui, 4);
+    /* Summary of the selected cast, above the plot: aligned with everything
+     * else, and out of the way of the plot filling the rest of the page. */
+    const SvCast *sel_cast = sv_app_cast(ui->app, sel);
+    if (sel_cast) {
+        nk_layout_row_template_begin(c, S(ui, ROW_H));
+        for (int i = 0; i < 4; i++)
+            nk_layout_row_template_push_dynamic(c);
+        nk_layout_row_template_end(c);
+
+        char b[4][96];
+        snprintf(b[0], sizeof b[0], "Max depth  %.2f m", sel_cast->max_depth);
+        snprintf(b[1], sizeof b[1], "Mean velocity  %.2f m/s",
+                 sv_profile_mean_sv(sel_cast));
+        snprintf(b[2], sizeof b[2], "Velocity  %.1f – %.1f m/s",
+                 sel_cast->min_sv, sel_cast->max_sv);
+        snprintf(b[3], sizeof b[3], "Temperature  %.2f – %.2f DegC",
+                 sel_cast->min_temp, sel_cast->max_temp);
+        for (int i = 0; i < 4; i++)
+            nk_label_colored(c, b[i], NK_TEXT_LEFT, ui->theme->text_dim);
+    }
 
     /* Plot on the left, cast list on the right. */
     float body_h = plot_row_height(ui, r);
@@ -626,26 +662,6 @@ static void page_profile(SvUi *ui, struct nk_rect r)
         nk_group_end(c);
     }
 
-    /* Summary of the selected cast, aligned with everything else. */
-    const SvCast *cast = sv_app_cast(ui->app, sel);
-    if (cast) {
-        gap(ui, 4);
-        nk_layout_row_template_begin(c, S(ui, ROW_H));
-        for (int i = 0; i < 4; i++)
-            nk_layout_row_template_push_dynamic(c);
-        nk_layout_row_template_end(c);
-
-        char b[4][96];
-        snprintf(b[0], sizeof b[0], "Max depth  %.2f m", cast->max_depth);
-        snprintf(b[1], sizeof b[1], "Mean velocity  %.2f m/s",
-                 sv_profile_mean_sv(cast));
-        snprintf(b[2], sizeof b[2], "Velocity  %.1f – %.1f m/s",
-                 cast->min_sv, cast->max_sv);
-        snprintf(b[3], sizeof b[3], "Temperature  %.2f – %.2f DegC",
-                 cast->min_temp, cast->max_temp);
-        for (int i = 0; i < 4; i++)
-            nk_label_colored(c, b[i], NK_TEXT_LEFT, ui->theme->text_dim);
-    }
 }
 
 /*
@@ -666,6 +682,13 @@ static void page_chart(SvUi *ui, struct nk_rect r)
 
     bool live = st->status_valid && st->status.has_fix;
     double live_lat = st->status.lat, live_lon = st->status.lon;
+
+    /* The instrument broadcasts every 10 s in run mode and not at all at the
+     * command prompt, so a fix older than a couple of broadcast intervals has
+     * stopped tracking the vessel and is labelled as such. */
+    uint64_t fix_age_ms = (live && st->status_ms) ? plat_now_ms() - st->status_ms
+                                                 : 0;
+    bool live_stale = live && fix_age_ms > 25000;
 
     /* Controls, on the same aligned row idiom as the profile page. */
     nk_layout_row_template_begin(c, S(ui, ROW_H));
@@ -701,7 +724,46 @@ static void page_chart(SvUi *ui, struct nk_rect r)
 
     nk_spacing(c, 1);
 
-    gap(ui, 4);
+    /*
+     * What the view is showing, and the separation of the selected cast from
+     * the current position — the two numbers an operator deciding whether to
+     * dip again actually wants. Above the plot, so the plot can fill the rest
+     * of the page; see plot_row_height().
+     */
+    nk_layout_row_template_begin(c, S(ui, ROW_H));
+    for (int i = 0; i < 3; i++)
+        nk_layout_row_template_push_dynamic(c);
+    nk_layout_row_template_end(c);
+
+    char sum[3][128];
+    if (ui->chart.have_view) {
+        char across[48];
+        sv_geo_format_distance(across, sizeof across,
+                               ui->chart_info.plot.w * ui->chart.m_per_px);
+        snprintf(sum[0], sizeof sum[0], "View  %s across", across);
+    } else {
+        snprintf(sum[0], sizeof sum[0], "View  —");
+    }
+
+    snprintf(sum[1], sizeof sum[1], "%d cast%s plotted", ui->chart_info.plotted,
+             ui->chart_info.plotted == 1 ? "" : "s");
+
+    const SvCast *sel_cast = sv_app_cast(ui->app, sel);
+    if (sel_cast && sel_cast->has_fix && live) {
+        char d[48];
+        sv_geo_format_distance(d, sizeof d,
+            sv_geo_distance_m(live_lat, live_lon,
+                              sel_cast->lat, sel_cast->lon));
+        snprintf(sum[2], sizeof sum[2], "Selected  %s / %03.0f from %s", d,
+                 sv_geo_bearing_deg(live_lat, live_lon,
+                                    sel_cast->lat, sel_cast->lon),
+                 live_stale ? "last fix" : "position");
+    } else {
+        snprintf(sum[2], sizeof sum[2], "Selected  —");
+    }
+
+    for (int i = 0; i < 3; i++)
+        nk_label_colored(c, sum[i], NK_TEXT_LEFT, t->text_dim);
 
     float body_h = plot_row_height(ui, r);
 
@@ -726,8 +788,8 @@ static void page_chart(SvUi *ui, struct nk_rect r)
     if (interactive) {
         if (nk_input_is_mouse_hovering_rect(&c->input, plot) &&
             c->input.mouse.scroll_delta.y != 0.0f) {
-            double f = pow(1.25, c->input.mouse.scroll_delta.y);
-            sv_chart_zoom(&ui->chart, &ui->chart_info, f,
+            double zf = pow(1.25, c->input.mouse.scroll_delta.y);
+            sv_chart_zoom(&ui->chart, &ui->chart_info, zf,
                           nk_vec2(c->input.mouse.pos.x, c->input.mouse.pos.y));
         }
 
@@ -756,7 +818,7 @@ static void page_chart(SvUi *ui, struct nk_rect r)
                      : nk_vec2(-1.0f, -1.0f);
 
     sv_chart_draw(c, area, t, ui->scale, &ui->chart, list, count, sel,
-                  st->track, st->track_n, live, live_lat, live_lon,
+                  st->track, st->track_n, live, live_stale, live_lat, live_lon,
                   m, &ui->chart_info);
 
     /* ---- side panel ------------------------------------------------- */
@@ -764,7 +826,8 @@ static void page_chart(SvUi *ui, struct nk_rect r)
         char buf[128], l1[48], l2[48];
 
         nk_layout_row_dynamic(c, S(ui, 20), 1);
-        nk_label_colored(c, "Position", NK_TEXT_LEFT, t->accent);
+        nk_label_colored(c, live_stale ? "Position  (last known)" : "Position",
+                         NK_TEXT_LEFT, t->accent);
 
         nk_layout_row_dynamic(c, S(ui, 22), 1);
         if (live) {
@@ -773,6 +836,18 @@ static void page_chart(SvUi *ui, struct nk_rect r)
             nk_label_colored(c, l1, NK_TEXT_LEFT, t->text);
             nk_layout_row_dynamic(c, S(ui, 22), 1);
             nk_label_colored(c, l2, NK_TEXT_LEFT, t->text);
+
+            /* Age, not just staleness: 40 s at the prompt and 6 minutes of a
+             * dead link need different reactions from the operator. */
+            nk_layout_row_dynamic(c, S(ui, 20), 1);
+            unsigned age_s = (unsigned)(fix_age_ms / 1000);
+            if (age_s >= 60)
+                snprintf(buf, sizeof buf, "fix %um %02us old",
+                         age_s / 60, age_s % 60);
+            else
+                snprintf(buf, sizeof buf, "fix %us old", age_s);
+            nk_label_colored(c, buf, NK_TEXT_LEFT,
+                             live_stale ? t->warn : t->text_dim);
         } else {
             nk_label_colored(c, st->status_valid ? "No GPS fix"
                                                  : "No status broadcast yet",
@@ -840,41 +915,6 @@ static void page_chart(SvUi *ui, struct nk_rect r)
         nk_group_end(c);
     }
 
-    /* Footer: what the view is showing, and the separation of the selected
-     * cast from the current position — the two numbers an operator deciding
-     * whether to dip again actually wants. */
-    gap(ui, 4);
-    nk_layout_row_template_begin(c, S(ui, ROW_H));
-    for (int i = 0; i < 3; i++)
-        nk_layout_row_template_push_dynamic(c);
-    nk_layout_row_template_end(c);
-
-    char f[3][128];
-    if (ui->chart.have_view) {
-        char across[48];
-        sv_geo_format_distance(across, sizeof across,
-                               ui->chart_info.plot.w * ui->chart.m_per_px);
-        snprintf(f[0], sizeof f[0], "View  %s across", across);
-    } else {
-        snprintf(f[0], sizeof f[0], "View  —");
-    }
-
-    snprintf(f[1], sizeof f[1], "%d cast%s plotted", ui->chart_info.plotted,
-             ui->chart_info.plotted == 1 ? "" : "s");
-
-    const SvCast *cast = sv_app_cast(ui->app, sel);
-    if (cast && cast->has_fix && live) {
-        char d[48];
-        sv_geo_format_distance(d, sizeof d,
-            sv_geo_distance_m(live_lat, live_lon, cast->lat, cast->lon));
-        snprintf(f[2], sizeof f[2], "Selected  %s / %03.0f from position", d,
-                 sv_geo_bearing_deg(live_lat, live_lon, cast->lat, cast->lon));
-    } else {
-        snprintf(f[2], sizeof f[2], "Selected  —");
-    }
-
-    for (int i = 0; i < 3; i++)
-        nk_label_colored(c, f[i], NK_TEXT_LEFT, t->text_dim);
 }
 
 static void page_files(SvUi *ui, struct nk_rect r)

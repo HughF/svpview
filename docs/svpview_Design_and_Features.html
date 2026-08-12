@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>svpview — Design and Features</title>
+<style>
+  :root{
+    --ink:#14181c; --body:#22303c; --muted:#5b6b78; --line:#d3dce3;
+    --accent:#0e7490; --accent-d:#155e75;
+    --sea:#0e7490; --sea-bg:#dbf0f4;
+    --warm:#b45309; --warm-bg:#fdf1e0;
+    --code:#6d28d9; --code-bg:#ece7fb;
+    --hw:#475569;  --hw-bg:#eef2f6;
+    --ok:#15803d;  --ok-bg:#d1fae5;
+    --no:#b91c1c;  --no-bg:#fee2e2;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  body{
+    font-family:"Segoe UI",Helvetica,Arial,sans-serif;
+    color:var(--body); line-height:1.5; font-size:10.5pt; margin:0;
+  }
+  h1,h2,h3,h4{color:var(--ink); line-height:1.2; font-weight:650;}
+  h2{font-size:16pt; margin:0 0 .2em; padding-bottom:.25em; border-bottom:2px solid var(--accent);}
+  h3{font-size:12.5pt; margin:1.3em 0 .3em; color:var(--accent-d);}
+  h4{font-size:10.5pt; margin:1em 0 .2em; color:var(--ink);}
+  p{margin:.5em 0;}
+  code,.mono{font-family:"JetBrains Mono","Consolas",monospace; font-size:.88em; color:var(--accent-d);}
+  a{color:var(--accent-d); text-decoration:none;}
+  ul,ol{margin:.4em 0 .7em; padding-left:1.3em;}
+  li{margin:.22em 0;}
+  strong{color:var(--ink);}
+  .lead{font-size:11pt;}
+  .muted{color:var(--muted);}
+
+  .cover{height:247mm; display:flex; flex-direction:column; justify-content:center; page-break-after:always;}
+  .cover .kicker{font-size:11pt; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); font-weight:600;}
+  .cover h1{font-size:34pt; margin:.15em 0 .1em; letter-spacing:-.01em;}
+  .cover .sub{font-size:14pt; color:var(--muted); font-weight:400; margin-bottom:2.2em;}
+  .cover .meta{border-top:1px solid var(--line); padding-top:1em; max-width:540px;}
+  .cover .meta div{display:flex; gap:1em; margin:.28em 0;}
+  .cover .meta .k{width:150px; color:var(--muted); flex:none;}
+  .cover .meta .v{color:var(--ink); font-weight:500;}
+  .badge{display:inline-block; margin-top:2.4em; font-size:9pt; color:var(--muted);
+         border:1px solid var(--line); border-radius:20px; padding:.3em .9em;}
+
+  section{page-break-before:always; padding-top:.2em;}
+  section.nobreak{page-break-before:auto;}
+
+  figure{margin:1.1em 0; page-break-inside:avoid;}
+  figure svg{width:100%; height:auto; display:block;}
+  figure img{width:100%; height:auto; display:block; border:1px solid var(--line); border-radius:4px;}
+  figcaption{font-size:8.8pt; color:var(--muted); margin-top:.5em;}
+  figcaption b{color:var(--ink);}
+
+  table{border-collapse:collapse; width:100%; font-size:9.3pt; margin:.7em 0; page-break-inside:avoid;}
+  th,td{border:1px solid var(--line); padding:.42em .6em; text-align:left; vertical-align:top;}
+  th{background:#f2f6f8; color:var(--ink); font-weight:600;}
+  td.mono,th.mono{font-family:"JetBrains Mono","Consolas",monospace; font-size:.86em;}
+  td.n{text-align:right; font-variant-numeric:tabular-nums;}
+
+  .callout{border-left:3px solid var(--accent); background:#f3f9fb; padding:.7em 1em; margin:1em 0; border-radius:0 4px 4px 0;}
+  .callout.opinion{border-left-color:var(--warm); background:var(--warm-bg);}
+  .callout.honest{border-left-color:var(--hw); background:var(--hw-bg);}
+  .callout .lbl{font-size:8pt; text-transform:uppercase; letter-spacing:.1em; font-weight:700;
+                color:var(--accent-d); display:block; margin-bottom:.2em;}
+  .callout.opinion .lbl{color:var(--warm);}
+  .callout.honest .lbl{color:var(--hw);}
+
+  .cols{display:flex; gap:1.4em;}
+  .cols>div{flex:1;}
+
+  .pill{display:inline-block; font-size:8pt; font-weight:600; padding:.12em .5em; border-radius:3px; vertical-align:middle;}
+  .pill.done{background:var(--ok-bg); color:var(--ok);}
+  .pill.sim{background:var(--sea-bg); color:var(--accent-d);}
+  .pill.no{background:var(--no-bg); color:var(--no);}
+  .pill.hw{background:var(--hw-bg); color:var(--hw);}
+
+  .toc ol{list-style:none; padding:0; counter-reset:toc;}
+  .toc li{counter-increment:toc; display:flex; align-items:baseline; margin:.35em 0;
+          border-bottom:1px dotted var(--line); padding-bottom:.28em;}
+  .toc li::before{content:counter(toc) ".\00a0"; color:var(--accent); font-weight:600; width:1.4em;}
+  .toc .t{color:var(--ink); font-weight:500;}
+  .toc .d{color:var(--muted); margin-left:.6em; font-size:9.4pt;}
+
+  .footer-note{font-size:8pt; color:var(--muted); border-top:1px solid var(--line); margin-top:2em; padding-top:.6em;}
+
+  pre.code{background:#0f172a; color:#e2e8f0; font-family:"JetBrains Mono","Consolas",monospace; font-size:8.6pt;
+           line-height:1.5; padding:.8em 1em; border-radius:5px; overflow-x:auto; margin:.7em 0; page-break-inside:avoid;}
+  pre.code .k{color:#93c5fd;} pre.code .c{color:#7f9cb3; font-style:italic;} pre.code .s{color:#86efac;}
+  .kbd{font-family:"JetBrains Mono","Consolas",monospace; font-size:.82em; background:#eef2f6; border:1px solid var(--line);
+       border-bottom-width:2px; border-radius:4px; padding:.05em .45em; color:var(--ink);}
+
+  .stat{display:flex; gap:1.2em; margin:1em 0; flex-wrap:wrap;}
+  .stat div{border:1px solid var(--line); border-radius:5px; padding:.6em .9em; min-width:118px; background:#fafcfd;}
+  .stat .v{font-size:16pt; font-weight:650; color:var(--accent-d); line-height:1.1;}
+  .stat .k{font-size:8.2pt; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;}
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="kicker">Survey software &middot; Design note</div>
+  <h1>svpview</h1>
+  <div class="sub">Valeport SWiFT acquisition, display and winch depth reporting &mdash;
+  in C99 and SDL2, with the design reasoning</div>
+  <div class="meta">
+    <div><span class="k">Application</span><span class="v mono">svpview 2026.08.12</span></div>
+    <div><span class="k">Replaces</span><span class="v">Valeport Ocean + VigoDepthRelay, in this workflow</span></div>
+    <div><span class="k">Instruments</span><span class="v">SWiFT SVP, SWiFT CTD, SWiFT<i>plus</i></span></div>
+    <div><span class="k">Language</span><span class="v">C99 &mdash; 8&nbsp;285 lines, one dependency (SDL2)</span></div>
+    <div><span class="k">Platforms</span><span class="v">Linux, macOS, Windows <span class="muted">(Win32 layer outstanding)</span></span></div>
+    <div><span class="k">Repository</span><span class="v mono">C&#8209;MAX/src/svpview</span></div>
+    <div><span class="k">Date</span><span class="v">12 August 2026</span></div>
+  </div>
+  <span class="badge">Engineering working document &mdash; simulator&#8209;proven, not yet hardware&#8209;proven</span>
+</div>
+
+<!-- ============ TOC ============ -->
+<section class="nobreak toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><span class="t">What it is</span><span class="d">scope, and the one thing it deliberately does not do</span></li>
+    <li><span class="t">Design intent</span><span class="d">six rules the code is held to</span></li>
+    <li><span class="t">The screen</span><span class="d">six pages, with what each is for</span></li>
+    <li><span class="t">The chart</span><span class="d">where the casts were, and the precision of saying so</span></li>
+    <li><span class="t">Talking to the instrument</span><span class="d">the session, and four protocol findings that cost time</span></li>
+    <li><span class="t">Oceanography</span><span class="d">the equations, and the numbers they were checked against</span></li>
+    <li><span class="t">Processing and export</span><span class="d">five formats, written atomically</span></li>
+    <li><span class="t">The winch link</span><span class="d">three message types, five ways to be ignored</span></li>
+    <li><span class="t">Architecture</span><span class="d">layers, and why there are no threads</span></li>
+    <li><span class="t">How it is tested</span><span class="d">399 assertions, a wire&#8209;level simulator, and sanitisers</span></li>
+    <li><span class="t">What is proven and what is not</span><span class="d">stated plainly</span></li>
+    <li><span class="t">Build and run</span></li>
+  </ol>
+
+  <div class="stat">
+    <div><div class="v">8&nbsp;285</div><div class="k">lines of C</div></div>
+    <div><div class="v">1</div><div class="k">dependency</div></div>
+    <div><div class="v">399</div><div class="k">test assertions</div></div>
+    <div><div class="v">6</div><div class="k">pages</div></div>
+    <div><div class="v">5</div><div class="k">export formats</div></div>
+    <div><div class="v">0</div><div class="k">threads</div></div>
+    <div><div class="v">0</div><div class="k">locks</div></div>
+  </div>
+</section>
+
+<!-- ============ 1. WHAT IT IS ============ -->
+<section>
+  <h2>1&nbsp;&nbsp;What it is</h2>
+
+  <p class="lead">svpview configures a Valeport SWiFT sound&#8209;velocity or CTD profiler, downloads the casts it
+  recorded, derives and plots them, exports to the formats the survey software downstream wants, and reports each
+  cast&rsquo;s achieved depth to a C&#8209;MAX Vigo winch. It is one statically&#8209;laid&#8209;out binary with no
+  installer, no runtime, and no configuration beyond a settings file it writes itself.</p>
+
+  <h3>1.1&nbsp;&nbsp;Scope, and the line it does not cross</h3>
+  <p>It does <strong>not</strong> control the winch. Casts are commanded from the winch&rsquo;s own panel and web
+  UI, which is where the operator already is and where the safety interlocks live. svpview only <em>reports</em>
+  the depth a cast reached, over the profiler UDP protocol Vigo already listens for on port 8090, so it drops into
+  an existing workflow in place of VigoDepthRelay without becoming a second thing that can drive a winch.</p>
+
+  <div class="callout">
+    <span class="lbl">Worth knowing</span>
+    Vigo also exposes a complete ASCII control API on TCP&nbsp;8092. It is documented in
+    <code>docs/VIGO_INTERFACE.md</code> as <em>available and deliberately unused</em>, so the decision is recorded
+    rather than rediscovered and re&#8209;argued in a year.
+  </div>
+
+  <h3>1.2&nbsp;&nbsp;The one moment it makes the winch move</h3>
+  <p>There is a single exception, and it comes from the profiler protocol rather than any control API: if the file
+  transfer fails &mdash; typically a Bluetooth link dropping with the instrument hanging at the transfer point
+  &mdash; svpview sends <code>F</code>. Vigo jogs the spool in by 100&nbsp;mm to shorten the Bluetooth path,
+  re&#8209;checks its proximity switch and answers <code>BTRST</code>, and the download is retried. Bounded retry
+  count, then it stops and says so.</p>
+</section>
+
+<!-- ============ 2. DESIGN INTENT ============ -->
+<section>
+  <h2>2&nbsp;&nbsp;Design intent</h2>
+  <p>Six rules. They are not aspirations written after the fact &mdash; each one has code and test consequences
+  that are pointed out where they appear later in this document.</p>
+
+  <h3>2.1&nbsp;&nbsp;Never present a number the data does not support</h3>
+  <p>Every value on screen can be traced to a measurement or is marked as absent. A cast logged without a GPS fix
+  does not get plotted at 0&deg;N 0&deg;E &mdash; it is counted in the chart&rsquo;s panel as &ldquo;not shown:
+  logged with no GPS fix&rdquo;. A status sentence whose checksum fails is parsed, flagged and counted, not
+  silently accepted and not silently dropped. A depth the winch will reject is explained <em>before</em> the
+  datagram goes out, in the operator&rsquo;s terms.</p>
+
+  <h3>2.2&nbsp;&nbsp;Treat every length in a file as hostile</h3>
+  <p>The <code>.bin</code> reader takes its header size from a field inside the file. That field can point past the
+  end of the file, and a corrupt one did produce a genuine out&#8209;of&#8209;bounds read during development
+  &mdash; found by the test that deliberately corrupts it, under AddressSanitizer. The reader now walks a bounded
+  cursor that latches on the first overrun and returns zeroes thereafter, so a truncated or garbled file yields a
+  short cast or a clear refusal, never a crash.</p>
+
+  <h3>2.3&nbsp;&nbsp;The interface must never be blocked by I/O</h3>
+  <p>Every link is non&#8209;blocking and polled once per frame. There is no operation that stops the window
+  repainting, which is why there is no need for a progress dialog that lies. See &sect;9.</p>
+
+  <h3>2.4&nbsp;&nbsp;One layout system, no special cases</h3>
+  <p>Pages are built from the same row helpers, so labels and fields share edges across every page. Dialogs all
+  carry Cancel&nbsp;/&nbsp;Apply&nbsp;/&nbsp;OK in that order, right aligned, with the body scrolling under a
+  pinned button row and a title&#8209;bar close; each is measured as it draws and sized to its own content, so a
+  dialog never hides its controls behind a scrollbar and the adapter picker is exactly one row taller when a second
+  adapter appears.</p>
+
+  <h3>2.5&nbsp;&nbsp;Scale with the display, both ways</h3>
+  <p>Every metric is written at scale 1 and multiplied by the UI scale as it draws; the font atlas is baked at
+  physical pixel size so text is crisp rather than magnified. The window opens at the design size
+  <em>times</em> that scale, clamped to the desktop&rsquo;s usable bounds &mdash; on a 192&nbsp;dpi panel that is
+  2560&times;1640 instead of a postage stamp.</p>
+
+  <h3>2.6&nbsp;&nbsp;Say what is not known</h3>
+  <p>Where the integration guide is silent or our copy of it is defective, the gap is documented as a gap. The
+  acknowledged&#8209;extraction command <code>#433</code> is unimplemented because the protocol figure is blank in
+  the PDF; it is listed as deferred with the reason, not quietly omitted.</p>
+
+  <div class="callout opinion">
+    <span class="lbl">The short version</span>
+    A survey day costs more than the software. The program is allowed to refuse, to explain and to be slow; it is
+    not allowed to crash, to lose a cast, or to state a depth it cannot justify.
+  </div>
+</section>
+
+<!-- ============ 3. THE SCREEN ============ -->
+<section>
+  <h2>3&nbsp;&nbsp;The screen</h2>
+  <p>A status strip along the top that is always true, a navigation rail, the page, and an action bar that reports
+  what the program is doing and what the winch last accepted. Six pages.</p>
+
+  <figure>
+    <img src="img/profile.png" alt="svpview Profile page: four traces plotted against depth, cast list on the right">
+    <figcaption><b>Figure 1.</b> The <b>Profile</b> page with four casts in memory. Traces are drawn on
+    independent scales so each uses the full width; the highlighted cast is opaque and the rest are dimmed, which
+    is what makes a ten&#8209;cast overlay readable. The status strip names the instrument, the link state, battery
+    hours, the last fix, the deploy verdict and whether the winch is answering.</figcaption>
+  </figure>
+
+  <h3>3.1&nbsp;&nbsp;Status strip &mdash; the six things that matter</h3>
+  <p>Instrument and serial, link state, battery hours remaining, last position, the ready&#8209;to&#8209;deploy
+  verdict, and the winch. The deploy verdict is not a flag repeated back: when the instrument says it is not ready,
+  the strip and the Live page explain <em>why</em> in the operator&rsquo;s terms &mdash; no fix, or the trigger
+  depth is not set &mdash; rather than showing a code to look up. The minimum window width is set by this strip,
+  because &ldquo;NOT ready to deploy&rdquo; truncating mid&#8209;word is the one caption that must never be
+  misread.</p>
+
+  <h3>3.2&nbsp;&nbsp;Live</h3>
+  <p>Continuous&#8209;mode time series of the primary observable, with the instrument&rsquo;s identity, the last
+  recorded file name and a running count of checksum failures &mdash; a slow rise there is the first sign of a
+  marginal Bluetooth link.</p>
+
+  <h3>3.3&nbsp;&nbsp;Profile</h3>
+  <p>Sound velocity, temperature, salinity and density against depth. Multi&#8209;cast overlay, cursor readout of
+  the nearest sample, axis ranges snapped to round numbers. Tick labels are dropped where they would collide but
+  every gridline is kept &mdash; at UI scale 2 on a narrow plot there is not room for all six numbers, and
+  overlapping digits are worse than fewer of them.</p>
+
+  <h3>3.4&nbsp;&nbsp;Chart</h3>
+  <p>Where the casts were taken. &sect;4.</p>
+
+  <h3>3.5&nbsp;&nbsp;Files</h3>
+  <figure>
+    <img src="img/files.png" alt="svpview Files page listing the instrument's SD card with per-row Download buttons">
+    <figcaption><b>Figure 2.</b> The <b>Files</b> page browsing the instrument&rsquo;s card. Directory navigation
+    is by <code>#400</code>/<code>#406</code>; each file has its own Download button, and the download streams to a
+    temporary file which is parsed and only then kept. Nothing is deleted from the card except on an explicit
+    operator action.</figcaption>
+  </figure>
+
+  <h3>3.6&nbsp;&nbsp;Settings</h3>
+  <figure>
+    <img src="img/settings.png" alt="svpview Settings page: instrument configuration read back from the device">
+    <figcaption><b>Figure 3.</b> <b>Settings</b>, showing the configuration as last read from the instrument.
+    Writes send only what changed and read it back to verify; the network adapter picker
+    (&sect;8) lives here too.</figcaption>
+  </figure>
+
+  <h3>3.7&nbsp;&nbsp;Log</h3>
+  <figure>
+    <img src="img/log.png" alt="svpview Log page showing the protocol exchange line by line">
+    <figcaption><b>Figure 4.</b> The <b>Log</b> &mdash; one line per protocol exchange, with control characters
+    sanitised so a multi&#8209;line instrument reply does not draw as boxes. It follows the newest line, but stops
+    the moment the operator scrolls up and resumes when they scroll back to the bottom: having the view yanked
+    back mid&#8209;read makes the page useless during a download, which is exactly when it is needed.</figcaption>
+  </figure>
+
+  <h3>3.8&nbsp;&nbsp;Themes, and knowing which build you are looking at</h3>
+  <div class="cols">
+    <div>
+      <p>Dark and light come from one role&#8209;based palette table, so a widget never hard&#8209;codes an RGB
+      value and the two themes cannot drift apart.</p>
+      <p>The window title carries the version and, once connected, the instrument and port &mdash; so a screenshot
+      identifies the build, and two profilers open at once can be told apart from the taskbar. The About box adds
+      the build stamp, SDL at runtime <em>and</em> the version it was compiled against, and the UI scale in
+      force: the four questions a support call opens with.</p>
+    </div>
+    <div>
+      <figure style="margin-top:0">
+        <img src="img/about.png" alt="svpview About dialog">
+        <figcaption><b>Figure 5.</b> About &mdash; one OK button, because Apply and Cancel have nothing to act on
+        in a dialog that changes nothing.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. CHART ============ -->
+<section>
+  <h2>4&nbsp;&nbsp;The chart</h2>
+
+  <figure>
+    <img src="img/chart.png" alt="svpview Chart page: cast markers, vessel track, graticule and scale bar">
+    <figcaption><b>Figure 6.</b> The <b>Chart</b> page. Cast markers with their time and maximum depth, the track
+    the instrument has been broadcasting, a graticule on whole minutes and seconds, a scale bar and a north arrow.
+    The panel gives the live position, the track point count, and every cast&rsquo;s range from where the vessel
+    is now. Drag pans, the wheel zooms about the cursor, a click selects the cast under it &mdash; and the Profile
+    page follows that selection.</figcaption>
+  </figure>
+
+  <h3>4.1&nbsp;&nbsp;A chart, not a map</h3>
+  <p>There is no basemap imagery, and that is a decision rather than an omission. Tiles would mean a tile server,
+  an image decoder, a cache, a licence and an internet connection on a boat that has none. What a positioning
+  plot has to do &mdash; show the geometry between the casts, the track and the vessel, to a stated scale &mdash;
+  needs none of that. Nothing was added to the dependency list to build this page.</p>
+
+  <h3>4.2&nbsp;&nbsp;A tangent plane, on purpose</h3>
+  <p>Positions are projected onto a local tangent plane about the view centre, using the WGS84
+  metres&#8209;per&#8209;degree series at the working latitude. For casts within one survey area &mdash; tens of
+  kilometres at most &mdash; that is accurate to centimetres, and it is <em>better</em> than a spherical formula
+  on a mean radius, which is out by roughly 0.3%: 3&nbsp;m in every kilometre. Distance and bearing fall back to
+  the spherical forms once two positions are more than a third of a degree apart, so a stray fix on the other side
+  of the world still gives a sane answer instead of nonsense.</p>
+  <p>The forward projection and the distance function are checked against each other in the test suite, so the
+  chart cannot draw one separation while the readout states another.</p>
+
+  <h3>4.3&nbsp;&nbsp;The graticule is sexagesimal</h3>
+  <p>Gridlines land on 30&deg;, 10&deg;, 5&deg;, 2&deg;, 1&deg;, then whole minutes, then whole seconds, then
+  tenths &mdash; never on a round number of metres. Labels are degrees and decimal minutes, the form written in a
+  survey log, and carry exactly the resolution the graticule is drawn at and no more. The scale bar is separately
+  a round 1&nbsp;/&nbsp;2&nbsp;/&nbsp;5 distance, because a scale bar has to be divisible by eye.</p>
+
+  <h3>4.4&nbsp;&nbsp;Two position sources, two precisions, stated</h3>
+  <table>
+    <tr><th>Source</th><th>Carries</th><th>Resolution</th><th>Used for</th></tr>
+    <tr><td>Cast file header</td><td class="mono">float32 lat, lon</td><td>sub&#8209;metre</td><td>cast markers</td></tr>
+    <tr><td><code>$PVBB</code> broadcast</td><td>four decimal places</td><td>~11 m of latitude</td><td>live marker, track</td></tr>
+  </table>
+  <p>This is why the track keeps only fixes more than 15&nbsp;m from the last one. Below that figure a
+  <em>stationary</em> instrument whose GPS wanders across a quantisation cell reports two positions 11&nbsp;m
+  apart for ever, and the track would fill with jitter that looks like movement. The threshold is a property of
+  the broadcast, not a guess, and the simulator reproduces the four&#8209;decimal quantisation rather than hiding
+  it.</p>
+</section>
+
+<!-- ============ 5. INSTRUMENT ============ -->
+<section>
+  <h2>5&nbsp;&nbsp;Talking to the instrument</h2>
+
+  <h3>5.1&nbsp;&nbsp;The session</h3>
+  <p>230&nbsp;400&nbsp;8N1 over Bluetooth or USB. <code>#</code> interrupts run mode; the instrument answers with
+  a <code>&gt;</code> prompt and accepts <code>#NNN</code> commands; <code>#028</code> returns it to run mode. The
+  connect sequence is interrupt&nbsp;&rarr;&nbsp;identify&nbsp;&rarr;&nbsp;read every setting&nbsp;&rarr;&nbsp;back
+  to run mode, so the program never sits at a prompt it forgot to leave, and every step carries a deadline: a
+  pulled cable leaves the link closed with a reason, not hung.</p>
+
+  <h3>5.2&nbsp;&nbsp;Four findings that cost real time</h3>
+  <p>Each of these is now a regression test.</p>
+
+  <table>
+    <tr><th style="width:26%">Finding</th><th>What went wrong, and what it means</th></tr>
+    <tr>
+      <td><b>The prompt is a <code>&gt;</code> at the start of a line</b></td>
+      <td>Directory listings contain <code>&lt;DIR&gt;</code>. Treating any <code>&gt;</code> as the prompt
+      truncated every listing at the first subdirectory.</td>
+    </tr>
+    <tr>
+      <td><b>The command echo precedes the file data</b></td>
+      <td>On <code>#402</code> the instrument echoes the command before the payload. Left in, it shifts the header
+      by a few bytes and <em>every</em> download parses as corrupt. Echo skipped, trailing prompt trimmed.</td>
+    </tr>
+    <tr>
+      <td><b>Basic extraction has no terminator</b></td>
+      <td>End of file is an idle timeout &mdash; 900&nbsp;ms of silence. Worth knowing before designing a progress
+      indicator around a length that never arrives.</td>
+    </tr>
+    <tr>
+      <td><b>The header size counts itself through the ETX</b></td>
+      <td>Confirmed rather than assumed: walking the documented fields gives 246&nbsp;/&nbsp;295&nbsp;/&nbsp;312
+      bytes for the three firmware variants, matching the totals the guide quotes independently. Asserted in
+      <code>tests/test_binfile.c</code>.</td>
+    </tr>
+  </table>
+
+  <h3>5.3&nbsp;&nbsp;The checksum, and why bad ones are kept</h3>
+  <p>The <code>$PVBB</code> checksum is a plain XOR of everything between <code>$</code> and <code>*</code>. Our
+  copy of the guide does not reproduce its own worked examples &mdash; they are out by a constant 0x70, so
+  characters were lost in the document. The algorithm is nevertheless confirmed, because the <em>deltas</em>
+  between successive examples reproduce exactly. A sentence with a failing checksum is therefore parsed, flagged
+  and counted rather than discarded: on a link where the guide itself is lossy, throwing away data on a checksum
+  we cannot fully verify against the vendor&rsquo;s own text would lose real casts.</p>
+</section>
+
+<!-- ============ 6. OCEANOGRAPHY ============ -->
+<section>
+  <h2>6&nbsp;&nbsp;Oceanography</h2>
+  <p>All of it in <code>sv_ocean.c</code> &mdash; portable, no I/O, unit&#8209;tested against published values.
+  An SVP measures sound speed and salinity is inverted from it; a CTD measures conductivity and sound speed is
+  computed. Either way all five derived columns end up populated, which is what the export writers and the plot
+  expect, so nothing downstream needs to know which instrument produced the cast.</p>
+
+  <table>
+    <tr><th>Quantity</th><th>Method</th><th>Check value</th></tr>
+    <tr><td>Depth from pressure</td><td>UNESCO 1983, with the gravity term at the cast&rsquo;s own latitude</td>
+        <td class="mono">9712.653 m at 10000 dBar, 30&deg;N</td></tr>
+    <tr><td>Sound speed</td><td>Chen &amp; Millero</td><td class="mono">c(35, 0, 0) = 1449.14 m/s</td></tr>
+    <tr><td>Salinity</td><td>PSS&#8209;78</td><td class="mono">round&#8209;trips with conductivity</td></tr>
+    <tr><td>Density</td><td>EOS&#8209;80</td><td class="mono">&rho;(35, 5, 0) = 1027.67547 kg/m&sup3;</td></tr>
+    <tr><td>Salinity from sound speed</td><td>numeric inverse of Chen &amp; Millero</td><td class="mono">inverts to 1e&#8209;6</td></tr>
+    <tr><td>Conductivity from salinity</td><td>numeric inverse of PSS&#8209;78</td><td class="mono">inverts to 1e&#8209;6</td></tr>
+  </table>
+
+  <div class="callout">
+    <span class="lbl">Why the latitude matters</span>
+    Pressure&#8209;to&#8209;depth carries a gravity term. Using a nominal latitude instead of the cast&rsquo;s own
+    is a systematic depth error that varies with where you are working &mdash; small, but free to get right, since
+    the cast already knows where it was taken.
+  </div>
+</section>
+
+<!-- ============ 7. PROCESSING AND EXPORT ============ -->
+<section>
+  <h2>7&nbsp;&nbsp;Processing and export</h2>
+
+  <h3>7.1&nbsp;&nbsp;Processing</h3>
+  <p>Applied to the selected cast, each step either fills in derived columns or removes samples &mdash; none of
+  them ever grow the array, so the single allocation made by the file reader is the only one a cast ever needs.</p>
+  <ul>
+    <li><b>Down/up&#8209;cast split.</b> The turning point is the deepest sample; a minimum depth removes the
+    surface soak and the recovery tail.</li>
+    <li><b>Despike.</b> A sample whose sound speed differs from the median of its window by more than a tolerance
+    goes; the count removed is reported rather than applied silently.</li>
+    <li><b>Thin.</b> Largest&#8209;triangle decimation on depth against sound speed &mdash; it drops the samples
+    that contribute least to the <em>shape</em>, so a 1262&#8209;sample cast thinned to 100 still has its
+    thermocline.</li>
+    <li><b>Depth bin.</b> Fixed bins, one entry per occupied bin at the bin&rsquo;s mean depth.</li>
+  </ul>
+
+  <h3>7.2&nbsp;&nbsp;Export</h3>
+  <p>CSV, Valeport VP2, Kongsberg <code>.asvp</code>, Caris <code>.svp</code>, Hypack <code>.vel</code>.</p>
+  <p>Every file is written to a temporary file and renamed into place. A survey machine that loses power
+  mid&#8209;write then has either the old file or the new one &mdash; never a half&#8209;written sound velocity
+  profile that the processing software will happily load and quietly misuse.</p>
+</section>
+
+<!-- ============ 8. WINCH ============ -->
+<section>
+  <h2>8&nbsp;&nbsp;The winch link</h2>
+  <p>One UDP socket on port 8090 and three message types. Vigo dispatches on character 0 only, which is why the
+  message shapes below are what they are.</p>
+
+  <table>
+    <tr><th style="width:8%">Msg</th><th>Sent</th><th>Reply</th></tr>
+    <tr><td class="mono">Q</td><td>at startup and on a timer, to prove the winch is there</td>
+        <td class="mono">VIGO responding</td></tr>
+    <tr><td class="mono">V</td><td class="mono">VP-&lt;NNN&gt;,Valeport-Winch-Go,&lt;depth&gt;</td>
+        <td class="mono">ACK</td></tr>
+    <tr><td class="mono">F</td><td>download failed &mdash; ask for the spool to be jogged in</td>
+        <td class="mono">BTRST</td></tr>
+  </table>
+
+  <h3>8.1&nbsp;&nbsp;Five ways to be ignored</h3>
+  <p>Vigo silently discards a depth report under five conditions, and all five look identical from outside:
+  &ldquo;the winch didn&rsquo;t see it&rdquo;. No cast performed yet this session; the message is byte&#8209;identical
+  to the previous one; the cast was aborted; the depth is not finite or not positive; or the depth is outside
+  0.1&times;&ndash;10&times; the requested cast depth. svpview mirrors all five rules locally and explains the
+  rejection <em>before</em> transmitting, so the failure appears as a sentence on the Log page rather than as a
+  dive table that mysteriously has no entry.</p>
+
+  <p>The dedupe rule is why the sequence number increments per cast: two consecutive casts to the same depth would
+  otherwise produce identical datagrams and the second would be dropped. This was verified end to end against a
+  stand&#8209;in for Vigo&rsquo;s listener &mdash; the same depth sent again as <code>VP-002</code> was
+  acknowledged, where a byte&#8209;identical repeat is not.</p>
+
+  <h3>8.2&nbsp;&nbsp;Which adapter, and the broadcast address</h3>
+  <figure>
+    <img src="img/network.png" alt="svpview network adapter picker listing connected adapters with address, mask and broadcast">
+    <figcaption><b>Figure 7.</b> The adapter picker lists only <em>connected</em> broadcast&#8209;capable adapters
+    &mdash; up, running and holding an address &mdash; with the address, mask and the broadcast that will actually
+    be used, and binds the winch socket to the chosen one.</figcaption>
+  </figure>
+  <p>The directed broadcast is computed as <code>(ip &amp; mask) | ~mask</code> rather than taken from the
+  operating system: the Windows path has to compute it anyway, and a wrong broadcast address sends the depth
+  report to the wrong subnet, where nothing complains and nothing arrives. Verified against a real /28
+  adapter that appeared mid&#8209;test &mdash; 172.20.10.2 / 255.255.255.240 &rarr; 172.20.10.15.</p>
+</section>
+
+<!-- ============ 9. ARCHITECTURE ============ -->
+<section>
+  <h2>9&nbsp;&nbsp;Architecture</h2>
+
+  <h3>9.1&nbsp;&nbsp;Layers</h3>
+  <p>Four, and the dependencies only point one way. The core knows nothing about SDL and does no I/O, which is
+  what makes it testable; everything OS&#8209;specific is behind one header.</p>
+
+  <table>
+    <tr><th style="width:16%">Layer</th><th>Modules</th><th>Knows about</th></tr>
+    <tr><td><b>UI</b></td><td class="mono">sv_ui, sv_plot, sv_chart, sv_theme</td><td>SDL2, Nuklear, the app</td></tr>
+    <tr><td><b>App</b></td><td class="mono">sv_app, sv_sim</td><td>the core and the platform layer</td></tr>
+    <tr><td><b>Core</b></td><td class="mono">sv_ocean, sv_geo, sv_proto, sv_binfile, sv_profile, sv_export, sv_vigo, sv_config</td>
+        <td>nothing but C and libm</td></tr>
+    <tr><td><b>Platform</b></td><td class="mono">plat_posix, plat_win32</td><td>the OS, behind <code>plat.h</code></td></tr>
+  </table>
+
+  <h3>9.2&nbsp;&nbsp;Why there are no threads</h3>
+  <p>The architecture note originally sketched one I/O thread per link. That was replaced before it was written,
+  and the reasoning is recorded in the file rather than lost: at 230&nbsp;400 baud a frame&rsquo;s worth of serial
+  data is under 400 bytes. A thread would buy nothing measurable and cost a class of race conditions this program
+  cannot afford. Everything is non&#8209;blocking and polled once per frame from one place.</p>
+
+  <pre class="code"><span class="c">/* the whole concurrency design */</span>
+<span class="k">while</span> (!quit) {
+    pump_sdl_events();
+    sv_app_poll(app);      <span class="c">// serial, UDP, simulator — none of them block</span>
+    sv_ui_frame(ui, w, h);
+    render();
+}</pre>
+  <p>No locks anywhere in the program. A bug can therefore be reasoned about by reading one path.</p>
+
+  <div class="callout honest">
+    <span class="lbl">A build&#8209;system bug worth repeating</span>
+    The Makefile originally had no header dependency tracking. Adding a field to a struct in <code>plat.h</code>
+    rebuilt some objects and not others &mdash; which does not fail to link, it silently reads the wrong fields.
+    It surfaced as the winch page showing a subnet mask where the broadcast address should be. Now built with
+    <code>-MMD -MP</code> and the generated <code>.d</code> files included. Any C project without this has the same
+    bug waiting.
+  </div>
+</section>
+
+<!-- ============ 10. TESTING ============ -->
+<section>
+  <h2>10&nbsp;&nbsp;How it is tested</h2>
+
+  <h3>10.1&nbsp;&nbsp;399 assertions, always sanitised</h3>
+  <p><code>make test</code> compiles every suite with AddressSanitizer and UndefinedBehaviorSanitizer. A test that
+  only passes without them has not passed.</p>
+
+  <table>
+    <tr><th>Suite</th><th class="n">Checks</th><th>Covers</th></tr>
+    <tr><td class="mono">test_geo</td><td class="n">106</td><td>metres per degree, distance, bearing, projection round&#8209;trip, graticule steps, position formatting</td></tr>
+    <tr><td class="mono">test_proto</td><td class="n">85</td><td>command codec, every documented sentence, framing, directory listings, the prompt rule</td></tr>
+    <tr><td class="mono">test_profile</td><td class="n">71</td><td>derive, cast split, despike, thinning, binning</td></tr>
+    <tr><td class="mono">test_binfile</td><td class="n">68</td><td>three header variants, SV and CTD, ASCII and UTF&#8209;16 site info, corrupt&#8209;length cases</td></tr>
+    <tr><td class="mono">test_vigo</td><td class="n">38</td><td>message building, reply classification, the five silent&#8209;drop rules</td></tr>
+    <tr><td class="mono">test_ocean</td><td class="n">31</td><td>depth, sound speed, salinity, density and both inverses</td></tr>
+  </table>
+
+  <h3>10.2&nbsp;&nbsp;The simulator is the important part</h3>
+  <p><code>sv_sim.c</code> emulates a SWiFT <em>at the wire</em>: command echo, the <code>&gt;</code> prompt,
+  <code>$PVBB</code> broadcasts with their real four&#8209;decimal quantisation, and a synthetic 25&nbsp;m cast
+  &mdash; warm mixed layer, thermocline, cold isothermal layer, sampled at 32&nbsp;Hz down and back up &mdash;
+  delivered as a real <code>.bin</code> over <code>#402</code>. The session code, the parsers and the download
+  path are all exercised, not bypassed. The simulated vessel is under way at 4 knots on a gently turning line, so
+  successive casts land at different positions and the chart has real geometry to draw.</p>
+  <p>The emulator deliberately does <em>not</em> share arithmetic with the code under test &mdash; it computes its
+  own sound speed and its own vessel motion from constants written out locally. Sharing a helper would let a test
+  pass because both sides made the same mistake.</p>
+
+  <div class="callout">
+    <span class="lbl">Where a test was wrong and the code was right</span>
+    A test asserting that a corrupt header size makes a file unreadable failed. The code was correct: a bad size
+    field is legitimately recovered by walking the documented field layout. The test was fixed to expect recovery,
+    and a second case added where the ETX is destroyed too, which genuinely is unrecoverable. Reading the failure
+    before believing it is part of the method.
+  </div>
+</section>
+
+<!-- ============ 11. STATUS ============ -->
+<section>
+  <h2>11&nbsp;&nbsp;What is proven and what is not</h2>
+  <p>Everything in this document runs. Most of it has only ever run against the simulator and the unit tests.
+  That distinction is the most important sentence in the document, so it gets a table rather than a footnote.</p>
+
+  <table>
+    <tr><th style="width:34%">Area</th><th style="width:14%">State</th><th>Meaning</th></tr>
+    <tr><td>Protocol parsers, oceanography, geodesy, processing, export</td>
+        <td><span class="pill done">proven</span></td>
+        <td>399 assertions under ASan and UBSan, against published check values and the guide&rsquo;s own examples</td></tr>
+    <tr><td>Instrument session, download, plotting, chart, UI</td>
+        <td><span class="pill sim">simulator</span></td>
+        <td>exercised end to end against a wire&#8209;level emulator; no real SWiFT has been connected</td></tr>
+    <tr><td>Winch depth reporting</td>
+        <td><span class="pill sim">stand&#8209;in</span></td>
+        <td>handshake and dedupe defeat verified against a stand&#8209;in for Vigo&rsquo;s listener, not the winch</td></tr>
+    <tr><td>Unattended download loop</td>
+        <td><span class="pill hw">needs hardware</span></td>
+        <td>ROADMAP phase 7 &mdash; ten consecutive operator&#8209;commanded casts, with induced failures</td></tr>
+    <tr><td>Windows build</td>
+        <td><span class="pill no">outstanding</span></td>
+        <td><code>plat_win32.c</code> is not written, so <code>make windows</code> does not link yet</td></tr>
+    <tr><td><code>.vpd</code> reading, batch download, auto&#8209;export</td>
+        <td><span class="pill no">not yet</span></td>
+        <td>planned, unimplemented</td></tr>
+    <tr><td><code>#433</code> acknowledged extraction</td>
+        <td><span class="pill no">blocked</span></td>
+        <td>the protocol figure is blank in our copy of the guide</td></tr>
+  </table>
+
+  <div class="callout honest">
+    <span class="lbl">Read this before quoting anything above</span>
+    Simulator&#8209;proven is not sea&#8209;proven. The emulator was written from the same document as the parsers,
+    so any misreading of the guide is reproduced faithfully on both sides and would go unnoticed until a real
+    instrument is on the bench. What the simulator does buy is that when one is, the remaining unknown is the
+    link and the instrument &mdash; not the program.
+  </div>
+</section>
+
+<!-- ============ 12. BUILD ============ -->
+<section>
+  <h2>12&nbsp;&nbsp;Build and run</h2>
+
+  <pre class="code"><span class="c"># Debian/Ubuntu: apt install libsdl2-dev · Arch: pacman -S sdl2 · macOS: brew install sdl2</span>
+make                  <span class="c"># ./svpview</span>
+make test             <span class="c"># every suite, ASan + UBSan</span>
+make debug            <span class="c"># sanitised build of the application itself</span>
+make windows          <span class="c"># mingw-w64 cross-build (needs plat_win32.c)</span>
+
+./svpview --sim              <span class="c"># run against the emulated instrument</span>
+./svpview --open cast.bin    <span class="c"># load a logged file</span>
+SVPVIEW_SCALE=1 ./svpview    <span class="c"># override the detected HiDPI scale</span></pre>
+
+  <p>Nuklear is vendored in <code>third_party/</code>. There is nothing else to fetch, and no network access is
+  required to build or to run.</p>
+
+  <h3>Where the reasoning lives</h3>
+  <table>
+    <tr><th style="width:34%">File</th><th>Contents</th></tr>
+    <tr><td class="mono">ARCHITECTURE.md</td><td>layers, threading rationale, crash&#8209;resistance, known unknowns</td></tr>
+    <tr><td class="mono">ROADMAP.md</td><td>nine phases with what is done and what needs hardware</td></tr>
+    <tr><td class="mono">CHANGELOG.md</td><td>the source of truth for release notes, including the bugs found during bring&#8209;up</td></tr>
+    <tr><td class="mono">docs/SWIFT_PROTOCOL.md</td><td>commands, sentences, the binary header variants</td></tr>
+    <tr><td class="mono">docs/VIGO_INTERFACE.md</td><td>the winch messages, the silent&#8209;drop rules, and the API not used</td></tr>
+  </table>
+
+  <div class="footer-note">
+    svpview 2026.08.12 &middot; C&#8209;MAX Sonar Systems &middot; document generated 12 August 2026.
+    Screenshots are of the running application at UI scale 2 against the built&#8209;in simulator.
+  </div>
+</section>
+
+</body>
+</html>

@@ -53,12 +53,20 @@ void sv_chart_zoom(SvChartView *v, const SvChartInfo *info,
 /* Pan by a pixel delta. */
 void sv_chart_pan(SvChartView *v, double dx_px, double dy_px);
 
+/*
+ * live_stale marks a fix that is no longer being refreshed — the instrument
+ * broadcasts nothing while it sits at the command prompt, so the last known
+ * position can be minutes old and the vessel long gone from it. A stale
+ * position is drawn hollow rather than filled; a solid marker means the fix is
+ * current.
+ */
 void sv_chart_draw(struct nk_context *ctx, struct nk_rect area,
                    const SvTheme *t, float scale,
                    SvChartView *v,
                    const SvCast *const *casts, int n_casts, int selected,
                    const SvFix *track, int n_track,
-                   bool live_valid, double live_lat, double live_lon,
+                   bool live_valid, bool live_stale,
+                   double live_lat, double live_lon,
                    struct nk_vec2 mouse, SvChartInfo *out);
 
 #endif /* SV_CHART_H */

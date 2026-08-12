@@ -23,6 +23,24 @@ typedef struct {
     char   site[SV_SITE_LEN];
 } SimSettings;
 
+/*
+ * A cast already on the card.
+ *
+ * A stored cast was recorded at the time and place the instrument was then,
+ * not where it is now — so each one carries its own timestamp and position,
+ * laid out along the survey line behind the vessel. Getting this wrong in the
+ * emulator would have made every downloaded cast plot on top of the boat.
+ */
+typedef struct {
+    char   name[40];
+    int    hh, mm, ss;
+    double lat, lon;
+    double max_depth;
+} SimLogged;
+
+#define SIM_LOGGED 4
+#define SIM_SPACING_M 320.0        /* between casts on the line */
+
 struct SvSim {
     unsigned char out[OUT_CAP];
     size_t out_head, out_tail;
@@ -46,6 +64,8 @@ struct SvSim {
      * necessarily the same one. */
     double lat, lon, course_deg;
     unsigned long last_move_ms;
+
+    SimLogged logged[SIM_LOGGED];   /* oldest first */
 };
 
 /* ------------------------------------------------------------------ */
@@ -118,7 +138,7 @@ static void bin_bcd(unsigned char **p, int v)
  * up cast is included so the profile split in sv_profile has something real
  * to cut.
  */
-static void sim_send_file(SvSim *s)
+static void sim_send_file(SvSim *s, const SimLogged *lg)
 {
     static unsigned char file[600000];
     unsigned char *p = file;
@@ -135,12 +155,13 @@ static void sim_send_file(SvSim *s)
 
     bin_bcd(&p, 20); bin_bcd(&p, 26);
     bin_bcd(&p, 8);  bin_bcd(&p, 11);
-    bin_bcd(&p, 10); bin_bcd(&p, 54); bin_bcd(&p, 36);
+    bin_bcd(&p, lg->hh); bin_bcd(&p, lg->mm); bin_bcd(&p, lg->ss);
 
-    /* The position the vessel is at now — the file header carries a 32-bit
-     * float, so this is the finer of the app's two position sources. */
-    bin_f32(&p, (float)s->lat);
-    bin_f32(&p, (float)s->lon);
+    /* Where this cast was recorded, which is not where the vessel is now. The
+     * header carries a 32-bit float, so it is the finer of the app's two
+     * position sources. */
+    bin_f32(&p, (float)lg->lat);
+    bin_f32(&p, (float)lg->lon);
     bin_f32(&p, 46236.0f);
     bin_str(&p, "0650735A9 Jun 29 2018 12:09", 35);
     bin_pad(&p, 3);
@@ -163,9 +184,9 @@ static void sim_send_file(SvSim *s)
     hdr[0] = (unsigned char)(hdr_size & 0xFF);
     hdr[1] = (unsigned char)((hdr_size >> 8) & 0xFF);
 
-    /* Descend to 25 m at 1.5 m/s, then recover at 1.0 m/s. */
+    /* Descend at 1.5 m/s, then recover at 1.0 m/s. */
     const double rate = 32.0;
-    const double max_depth = 24.0 + (s->cast_counter % 5);
+    const double max_depth = lg->max_depth;
     uint32_t tick = 0;
 
     for (int phase = 0; phase < 2; phase++) {
@@ -250,10 +271,11 @@ static void status_broadcast(SvSim *s)
      * sentence carries — about 11 m of latitude. The chart's live track can be
      * no finer than this, and pretending otherwise here would hide a real
      * limitation of the instrument's broadcast. */
+    const SimLogged *last = &s->logged[SIM_LOGGED - 1];
     snprintf(body, sizeof body,
-             "PVBB,00102532,46236,%.4f,%.4f,%.2f,260811105436,%d,",
-             s->lat, s->lon,
-             s->battery_hours, s->cast_counter > 0 ? 1 : 1);
+             "PVBB,00102532,46236,%.4f,%.4f,%.2f,260811%02d%02d%02d,%d,",
+             s->lat, s->lon, s->battery_hours,
+             last->hh, last->mm, last->ss, 1);
 
     emitf(s, "$%s*%02X\r\n", body, sv_nmea_checksum(body, strlen(body)));
 }
@@ -329,21 +351,30 @@ static void handle_command(SvSim *s, const char *line)
 
     case SV_CMD_DIR_LIST:
         emits(s, "DIR:\\202608\\11\r\n");
-        emits(s, "2026/08/11\t10:54:36\t<DIR>\r\n");
-        emitf(s, "2026/08/11\t10:54:36\t%d\tVL_46236_260811105436.bin\r\n",
-              4096);
-        emitf(s, "2026/08/11\t11:31:02\t%d\tVL_46236_260811113102.bin\r\n",
-              4096);
+        emits(s, "2026/08/11\t09:58:12\t<DIR>\r\n");
+        for (int i = 0; i < SIM_LOGGED; i++)
+            emitf(s, "2026/08/11\t%02d:%02d:%02d\t%d\t%s\r\n",
+                  s->logged[i].hh, s->logged[i].mm, s->logged[i].ss,
+                  4096, s->logged[i].name);
         emits(s, "2026/08/11\t11:45:10\t872\taction.log\r\n");
         break;
 
     case SV_CMD_CHDIR:
         break;
 
-    case SV_CMD_EXTRACT:
-        sim_send_file(s);
+    case SV_CMD_EXTRACT: {
+        /* Serve the cast that was asked for, by name. Anything unrecognised
+         * gets the newest, which is what the automatic path asks for. */
+        const SimLogged *lg = &s->logged[SIM_LOGGED - 1];
+        for (int i = 0; i < SIM_LOGGED; i++)
+            if (strstr(arg, s->logged[i].name)) {
+                lg = &s->logged[i];
+                break;
+            }
+        sim_send_file(s, lg);
         s->cast_counter++;
         break;
+    }
 
     default:
         break;
@@ -373,6 +404,32 @@ SvSim *sv_sim_create(void)
     s->lat = 50.4264;                  /* Torbay, as in the guide's example */
     s->lon = -3.6814;
     s->course_deg = 65.0;
+
+    /* Four casts already on the card, laid out along the line the vessel has
+     * just run: newest at the start position, the rest trailing astern at
+     * SIM_SPACING_M. Times and depths differ so the app has something to tell
+     * apart, as a real card would. */
+    static const struct { int hh, mm, ss; double depth; } made[SIM_LOGGED] = {
+        {  9, 58, 12, 22.4 },
+        { 10, 21, 44, 25.9 },
+        { 10, 54, 36, 24.0 },
+        { 11, 31,  2, 23.1 }
+    };
+
+    double back = s->course_deg * 3.14159265358979323846 / 180.0;
+    for (int i = 0; i < SIM_LOGGED; i++) {
+        double astern = (double)(SIM_LOGGED - 1 - i) * SIM_SPACING_M;
+        s->logged[i].hh = made[i].hh;
+        s->logged[i].mm = made[i].mm;
+        s->logged[i].ss = made[i].ss;
+        s->logged[i].max_depth = made[i].depth;
+        s->logged[i].lat = s->lat - astern * cos(back) / 111320.0;
+        s->logged[i].lon = s->lon - astern * sin(back) /
+                           (111320.0 * cos(s->lat * 3.14159265358979323846 / 180.0));
+        snprintf(s->logged[i].name, sizeof s->logged[i].name,
+                 "VL_46236_260811%02d%02d%02d.bin",
+                 made[i].hh, made[i].mm, made[i].ss);
+    }
     return s;
 }
 

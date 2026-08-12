@@ -64,6 +64,75 @@ across five suites under AddressSanitizer and UndefinedBehaviorSanitizer.
   having the view yanked back mid-read makes the page useless during a
   download.
 
+### Added — Chart page (2026-08-12)
+- A plan view of where the casts were taken, from data the program already had
+  and nothing displayed: the `.bin` header carries a 32-bit float latitude and
+  longitude, and `$PVBB` carries the live fix.
+- `sv_geo` — WGS84 metres per degree, distance and bearing, a local tangent
+  plane, sexagesimal graticule steps, and degrees-and-decimal-minutes
+  formatting. 106 assertions. The plane is used because the job is casts tens
+  of kilometres apart at most, where it beats a spherical formula on a mean
+  radius by about 0.3%; distance and bearing fall back to the spherical forms
+  past a third of a degree.
+- `sv_chart` — graticule on whole minutes and seconds rather than round metres,
+  cast markers with time and depth, the track from the status broadcasts, scale
+  bar, north arrow, and a cursor readout carrying range and bearing from the
+  current position. Drag pans, the wheel zooms about the cursor, a click
+  selects the cast under it and the Profile page follows.
+- **No basemap imagery**, and no new dependency: tiles would need a tile
+  server, an image decoder, a cache and an internet connection the boat does
+  not have, to show what a positioning plot does not need.
+- Two things are stated rather than blended. Casts logged without a GPS fix are
+  counted in the panel instead of quietly missing from the plot. And the live
+  position carries its age, drawn hollow once it stops being refreshed — the
+  instrument broadcasts nothing at the command prompt, which is exactly when
+  the operator is downloading, so that marker is routinely minutes stale.
+- The track keeps only fixes more than 15 m apart, because `$PVBB` gives
+  position to four decimal places (~11 m of latitude) and a stationary
+  instrument crossing a quantisation cell would otherwise fill the track with
+  jitter that looks like movement.
+
+### Fixed — the profile plot could abort the program
+- Overlaying four casts crossed Nuklear's 16-bit vertex index limit (65535
+  vertices, about 16000 line segments) and the assertion inside
+  `nk_draw_list_alloc_vertices` killed the process. Found by opening four casts
+  from the simulator's card with all four traces on — an ordinary thing to do,
+  one cast away from the operator.
+- Fixed at both ends. `NK_UINT_DRAW_INDEX` moves the indices to 32 bits, which
+  also needed a fix to the vendored `nuklear_sdl_renderer.h`: it hard-codes the
+  index size as 2 bytes in its `SDL_RenderGeometryRaw` call, so with 32-bit
+  indices SDL reads garbage. That one is an upstream bug and is marked as such
+  in the file. And `sv_plot` now decimates each trace to the pixel grid, so a
+  frame's vertex count is bounded by the size of the plot rather than by how
+  many samples a cast holds — a 1200-sample cast drew 1200 segments where a few
+  hundred are visually identical.
+- Verified by reproducing the exact case that aborted: four casts, four traces,
+  overlaid.
+
+### Changed — simulator
+- The simulated vessel is under way: a survey line at 4 knots, gently turning,
+  with the position integrated in one place so the broadcast and the position
+  written into a downloaded file cannot disagree.
+- The card now holds four casts with their own timestamps, positions and
+  depths, laid out along the line astern of the vessel. A stored cast was
+  recorded where the instrument was *then* — the emulator previously stamped
+  every download with the current position, which would have plotted every
+  cast on top of the boat.
+- `$PVBB` is emitted with the four decimal places the integration guide's own
+  example carries, rather than more precision than the instrument gives.
+
+### Fixed — page layout: rows below a full-height plot were being dropped
+- The profile page's summary line was invisible at UI scale 2, and the chart's
+  was too. Sizing a plot from the content region's full height leaves the row
+  after it beyond the panel's clip — which `nk_window_get_content_region` does
+  not account for — and Nuklear *drops* such a row entirely rather than
+  clipping it, so it vanishes with no visual clue. Both pages now put their
+  summary line above the plot and let the plot fill the rest, so there is no
+  row afterwards to lose.
+- Chart latitude labels are given a gutter measured from the font rather than a
+  constant, which was clipping `50° 25.700' N` at scale 2; cast labels flip to
+  the left of their marker rather than running off the right-hand edge.
+
 ### Fixed — opening window size on a HiDPI display
 - The window opened at the layout's design size of 1280x820 *pixels*, but every
   metric in the layout is multiplied by the UI scale as it is drawn, so on a

@@ -181,7 +181,12 @@ nk_sdl_render(enum nk_anti_aliasing AA)
                         (const SDL_Color*)((const nk_byte*)vertices + vc), vs,
                         (const float*)((const nk_byte*)vertices + vt), vs,
                         (vbuf.needed / vs),
-                        (void *) offset, cmd->elem_count, 2);
+                        /* LOCAL FIX: upstream hard-codes 2 here, which is
+                         * wrong whenever NK_UINT_DRAW_INDEX is defined — the
+                         * indices are then 4 bytes and SDL reads garbage.
+                         * Worth sending upstream. */
+                        (void *) offset, cmd->elem_count,
+                        (int)sizeof(nk_draw_index));
 
                 offset += cmd->elem_count;
             }

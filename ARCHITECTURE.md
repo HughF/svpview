@@ -126,28 +126,30 @@ not be rubbish.
 
 ## 4. Modules
 
+The table below is what exists. The original plan split the app layer into
+`sv_session.c` / `sv_cast.c` and the UI into one `sv_pages_*.c` per page; both
+were consolidated during implementation because the split was costing more
+plumbing than it bought. `sv_vpd.c` and `plat_win32.c` are planned and not yet
+written.
+
 | File | Layer | Responsibility |
 |---|---|---|
 | `sv_main.c` | ui | SDL init, event pump, frame loop, teardown |
-| `sv_app.c` | app | Application state struct, queue pumping, autosave |
-| `sv_session.c` | app | Instrument FSM: interrupt → configure → run → download |
-| `sv_cast.c` | app | Cast detection, download-and-report sequence, cast log |
-| `sv_ui.c` | ui | Nuklear context, layout shell, page routing |
-| `sv_pages_*.c` | ui | One file per page: connect, live, profile, config, files |
-| `sv_plot.c` | ui | Profile/time plot renderer (SDL primitives, no Nuklear) |
-| `sv_theme.c` | ui | Palette, light/dark, HiDPI scale |
+| `sv_ui.c` | ui | Nuklear context, layout shell, all six pages, all dialogs |
+| `sv_plot.c` | ui | Profile and live time-series plots |
+| `sv_chart.c` | ui | Cast positions in plan: graticule, track, scale bar |
+| `sv_theme.c` | ui | Palette by role, light/dark, HiDPI metrics |
+| `sv_app.c` | app | State, instrument job FSM, link pumping, winch reporting |
+| `sv_sim.c` | app | Wire-level SWiFT emulator, including a synthetic `.bin` |
 | `sv_proto.c` | core | `#NNN` command codec; `$PVBB`/`$PVSVP`/`$PVSV1/2`/`$PVCT2` parsers |
 | `sv_binfile.c` | core | `.bin` header (3 firmware variants) + sample decode |
-| `sv_vpd.c` | core | `.vpd` / `.vp2` INI-style read/write |
 | `sv_profile.c` | core | Cast data model and processing |
 | `sv_ocean.c` | core | UNESCO 83 depth, PSS-78 salinity, EOS-80 density, Chen-Millero SV |
-| `sv_export.c` | core | Export writers |
+| `sv_geo.c` | core | WGS84 per-degree, distance/bearing, tangent plane, graticule steps |
+| `sv_export.c` | core | Export writers, atomic via temp file and rename |
 | `sv_vigo.c` | core | Profiler UDP message codec: `Q` / `V` / `F` build, reply match |
-| `sv_log.c` | core | Rotating text log, one line per protocol exchange |
-| `plat_serial.c` | plat | Open/enumerate/read/write/close a serial port |
-| `plat_net.c` | plat | TCP client, UDP socket, broadcast |
-| `plat_path.c` | plat | Config/data dirs, path joining, atomic file replace |
-| `plat_time.c` | plat | Monotonic ms, UTC conversion |
+| `sv_config.c` | core | Settings file read/write |
+| `plat_posix.c` | plat | Serial, UDP, adapter enumeration, paths, monotonic time |
 
 Naming and layout follow `cm2view` and `sfview` so the three programs stay
 readable as a set.

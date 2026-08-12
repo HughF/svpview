@@ -256,6 +256,18 @@ void sv_plot_profile(struct nk_context *ctx, struct nk_rect area,
             }
             float thick = (dim ? 1.0f : 1.6f) * scale;
 
+            /*
+             * Decimated to the pixel grid: a point closer than PIX_MIN to the
+             * last one drawn, in both axes, cannot be told apart on screen.
+             *
+             * This is not only for speed. A 1200-sample cast is 1200 line
+             * segments per trace, and four casts with two traces each is
+             * ~9600 — which is where Nuklear's 16-bit vertex index used to
+             * overflow and abort the program. The last sample is always drawn
+             * so the trace still ends at the deepest reading.
+             */
+            const float PIX_MIN = 0.7f * scale;
+
             float px = 0, py = 0;
             bool have_prev = false;
 
@@ -268,8 +280,13 @@ void sv_plot_profile(struct nk_context *ctx, struct nk_rect area,
                 float x = in.x + in.w * (float)((v - vr[b].lo) / vspan);
                 float y = in.y + in.h * (float)((d - depth.lo) / dspan);
 
-                if (have_prev)
+                if (have_prev) {
+                    bool last = (k == c->n - 1);
+                    if (!last &&
+                        fabsf(x - px) < PIX_MIN && fabsf(y - py) < PIX_MIN)
+                        continue;
                     nk_stroke_line(cb, px, py, x, y, thick, cc);
+                }
                 px = x;
                 py = y;
                 have_prev = true;

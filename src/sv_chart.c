@@ -282,7 +282,8 @@ void sv_chart_draw(struct nk_context *ctx, struct nk_rect area,
                    SvChartView *v,
                    const SvCast *const *casts, int n_casts, int selected,
                    const SvFix *track, int n_track,
-                   bool live_valid, double live_lat, double live_lon,
+                   bool live_valid, bool live_stale,
+                   double live_lat, double live_lon,
                    struct nk_vec2 mouse, SvChartInfo *out)
 {
     struct nk_command_buffer *cb = nk_window_get_canvas(ctx);
@@ -415,8 +416,15 @@ void sv_chart_draw(struct nk_context *ctx, struct nk_rect area,
         snprintf(lab, sizeof lab, "%02d:%02d  %.1f m",
                  c->hour, c->minute, c->max_depth);
 
-        struct nk_rect lr = nk_rect(x + r + 5 * scale, y - fh / 2,
-                                    text_w(ctx, lab) + 2, fh);
+        float lw = text_w(ctx, lab) + 2;
+        struct nk_rect lr = nk_rect(x + r + 5 * scale, y - fh / 2, lw, fh);
+
+        /* Flip to the left of the marker rather than run off the edge — a cast
+         * near the right-hand side is exactly the one just taken. */
+        if (lr.x + lr.w > in.x + in.w)
+            lr.x = x - r - 5 * scale - lw;
+        if (lr.x < in.x)
+            lr.x = in.x;
 
         /* Drop a label rather than stack it on top of another one. The
          * marker stays: losing a position would be a lie, losing its caption
@@ -444,11 +452,20 @@ void sv_chart_draw(struct nk_context *ctx, struct nk_rect area,
         float y = cy - (float)(n / mpp);
         float r = 5.0f * scale;
 
-        nk_stroke_line(cb, x - r * 2.2f, y, x + r * 2.2f, y, 1.0f * scale,
-                       t->ok);
-        nk_stroke_line(cb, x, y - r * 2.2f, x, y + r * 2.2f, 1.0f * scale,
-                       t->ok);
-        nk_fill_circle(cb, nk_rect(x - r, y - r, r * 2, r * 2), t->ok);
+        /* Hollow when the fix has stopped being refreshed. The instrument is
+         * silent at the command prompt, which is exactly when the operator is
+         * downloading — so this marker is routinely minutes old, and a solid
+         * dot claiming to be the vessel would be the chart's biggest lie. */
+        struct nk_color col = live_stale ? t->warn : t->ok;
+
+        nk_stroke_line(cb, x - r * 2.2f, y, x + r * 2.2f, y, 1.0f * scale, col);
+        nk_stroke_line(cb, x, y - r * 2.2f, x, y + r * 2.2f, 1.0f * scale, col);
+
+        if (live_stale)
+            nk_stroke_circle(cb, nk_rect(x - r, y - r, r * 2, r * 2),
+                             1.6f * scale, col);
+        else
+            nk_fill_circle(cb, nk_rect(x - r, y - r, r * 2, r * 2), col);
     }
 
     draw_scale_bar(ctx, cb, t, scale, in, mpp);
