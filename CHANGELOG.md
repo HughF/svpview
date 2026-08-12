@@ -121,6 +121,24 @@ across five suites under AddressSanitizer and UndefinedBehaviorSanitizer.
 - `$PVBB` is emitted with the four decimal places the integration guide's own
   example carries, rather than more precision than the instrument gives.
 
+### Fixed — the settings page's scroll offset leaked to every other page
+- All six pages share one Nuklear window, and therefore share its scroll
+  offset. Scrolling the settings page down and switching to another page left
+  that page drawn shifted up — the chart's control row off the top, with no
+  scrollbar to bring it back, because the other pages are
+  `NK_WINDOW_NO_SCROLLBAR`. Each page now starts at its top. Found while
+  taking documentation screenshots, not by a test.
+
+### Added — documentation
+- `docs/svpview_Design_and_Features.{html,pdf}` — an illustrated tour of the
+  application and the reasoning behind it: the six pages with screenshots, the
+  design rules and what each costs in code, the protocol findings, the
+  oceanography check values, the winch link, the architecture, the test
+  discipline, and a plain table of what is proven versus simulator-only.
+  Self-contained HTML in the house style; PDF rendered with headless Chrome.
+- `ARCHITECTURE.md`'s module table now lists the modules that exist rather than
+  the ones originally planned, and says which were consolidated and why.
+
 ### Fixed — page layout: rows below a full-height plot were being dropped
 - The profile page's summary line was invisible at UI scale 2, and the chart's
   was too. Sizing a plot from the content region's full height leaves the row

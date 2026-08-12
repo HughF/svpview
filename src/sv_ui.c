@@ -138,6 +138,7 @@ struct SvUi {
     float    dlg_natural_h;
 
     char     title[192];       /* last title pushed to the window manager */
+    SvPage   last_page;        /* to notice a page change; see sv_ui_frame */
 };
 
 /* ------------------------------------------------------------------ */
@@ -1981,6 +1982,19 @@ void sv_ui_frame(SvUi *ui, int w, int h)
                              nk_style_item_color(ui->theme->bg));
     if (nk_begin(c, "content", content,
                  (ui->page == PAGE_SETTINGS) ? 0 : NK_WINDOW_NO_SCROLLBAR)) {
+
+        /*
+         * Every page shares one Nuklear window, and so shares its scroll
+         * offset. Scrolling down the settings page and switching to another
+         * one left that page drawn shifted up — its control row off the top,
+         * with no scrollbar to bring it back, because the other pages are
+         * NK_WINDOW_NO_SCROLLBAR. Each page therefore starts at its top.
+         */
+        if (ui->page != ui->last_page) {
+            nk_window_set_scroll(c, 0, 0);
+            ui->last_page = ui->page;
+        }
+
         struct nk_rect inner = nk_window_get_content_region(c);
         switch (ui->page) {
         case PAGE_LIVE:     page_live(ui, inner);     break;

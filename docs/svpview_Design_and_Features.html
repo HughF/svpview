@@ -109,7 +109,7 @@
     <div><span class="k">Application</span><span class="v mono">svpview 2026.08.12</span></div>
     <div><span class="k">Replaces</span><span class="v">Valeport Ocean + VigoDepthRelay, in this workflow</span></div>
     <div><span class="k">Instruments</span><span class="v">SWiFT SVP, SWiFT CTD, SWiFT<i>plus</i></span></div>
-    <div><span class="k">Language</span><span class="v">C99 &mdash; 8&nbsp;285 lines, one dependency (SDL2)</span></div>
+    <div><span class="k">Language</span><span class="v">C99 &mdash; 8&nbsp;441 lines, one dependency (SDL2)</span></div>
     <div><span class="k">Platforms</span><span class="v">Linux, macOS, Windows <span class="muted">(Win32 layer outstanding)</span></span></div>
     <div><span class="k">Repository</span><span class="v mono">C&#8209;MAX/src/svpview</span></div>
     <div><span class="k">Date</span><span class="v">12 August 2026</span></div>
@@ -122,7 +122,7 @@
   <h2>Contents</h2>
   <ol>
     <li><span class="t">What it is</span><span class="d">scope, and the one thing it deliberately does not do</span></li>
-    <li><span class="t">Design intent</span><span class="d">six rules the code is held to</span></li>
+    <li><span class="t">Design intent</span><span class="d">seven rules the code is held to</span></li>
     <li><span class="t">The screen</span><span class="d">six pages, with what each is for</span></li>
     <li><span class="t">The chart</span><span class="d">where the casts were, and the precision of saying so</span></li>
     <li><span class="t">Talking to the instrument</span><span class="d">the session, and four protocol findings that cost time</span></li>
@@ -136,7 +136,7 @@
   </ol>
 
   <div class="stat">
-    <div><div class="v">8&nbsp;285</div><div class="k">lines of C</div></div>
+    <div><div class="v">8&nbsp;441</div><div class="k">lines of C</div></div>
     <div><div class="v">1</div><div class="k">dependency</div></div>
     <div><div class="v">399</div><div class="k">test assertions</div></div>
     <div><div class="v">6</div><div class="k">pages</div></div>
@@ -179,7 +179,7 @@
 <!-- ============ 2. DESIGN INTENT ============ -->
 <section>
   <h2>2&nbsp;&nbsp;Design intent</h2>
-  <p>Six rules. They are not aspirations written after the fact &mdash; each one has code and test consequences
+  <p>Seven rules. They are not aspirations written after the fact &mdash; each one has code and test consequences
   that are pointed out where they appear later in this document.</p>
 
   <h3>2.1&nbsp;&nbsp;Never present a number the data does not support</h3>
@@ -196,24 +196,36 @@
   cursor that latches on the first overrun and returns zeroes thereafter, so a truncated or garbled file yields a
   short cast or a clear refusal, never a crash.</p>
 
-  <h3>2.3&nbsp;&nbsp;The interface must never be blocked by I/O</h3>
+  <h3>2.3&nbsp;&nbsp;Bound the work a frame can do</h3>
+  <p>A plot must not cost more to draw because a cast holds more samples than the plot has pixels. Each trace is
+  decimated to the pixel grid as it is drawn, so a 1200&#8209;sample cast costs what a few hundred segments cost
+  and looks identical.</p>
+  <p>This one arrived the hard way, and it is the best evidence in this document that the rule matters: overlaying
+  four casts with all four traces &mdash; roughly 9600 line segments, each of them a quad &mdash; crossed
+  Nuklear&rsquo;s 16&#8209;bit vertex index limit of 65535 and the assertion inside its draw list <em>killed the
+  program</em>. Ticking four checkboxes with four casts open is not an edge case. The ceiling is now 32&#8209;bit
+  (which needed a fix to the vendored SDL backend, where the index size is hard&#8209;coded to two bytes &mdash;
+  an upstream bug), and the decimation keeps a frame&rsquo;s vertex count tied to the size of the plot rather than
+  to the data.</p>
+
+  <h3>2.4&nbsp;&nbsp;The interface must never be blocked by I/O</h3>
   <p>Every link is non&#8209;blocking and polled once per frame. There is no operation that stops the window
   repainting, which is why there is no need for a progress dialog that lies. See &sect;9.</p>
 
-  <h3>2.4&nbsp;&nbsp;One layout system, no special cases</h3>
+  <h3>2.5&nbsp;&nbsp;One layout system, no special cases</h3>
   <p>Pages are built from the same row helpers, so labels and fields share edges across every page. Dialogs all
   carry Cancel&nbsp;/&nbsp;Apply&nbsp;/&nbsp;OK in that order, right aligned, with the body scrolling under a
   pinned button row and a title&#8209;bar close; each is measured as it draws and sized to its own content, so a
   dialog never hides its controls behind a scrollbar and the adapter picker is exactly one row taller when a second
   adapter appears.</p>
 
-  <h3>2.5&nbsp;&nbsp;Scale with the display, both ways</h3>
+  <h3>2.6&nbsp;&nbsp;Scale with the display, both ways</h3>
   <p>Every metric is written at scale 1 and multiplied by the UI scale as it draws; the font atlas is baked at
   physical pixel size so text is crisp rather than magnified. The window opens at the design size
   <em>times</em> that scale, clamped to the desktop&rsquo;s usable bounds &mdash; on a 192&nbsp;dpi panel that is
   2560&times;1640 instead of a postage stamp.</p>
 
-  <h3>2.6&nbsp;&nbsp;Say what is not known</h3>
+  <h3>2.7&nbsp;&nbsp;Say what is not known</h3>
   <p>Where the integration guide is silent or our copy of it is defective, the gap is documented as a gap. The
   acknowledged&#8209;extraction command <code>#433</code> is unimplemented because the protocol figure is blank in
   the PDF; it is listed as deferred with the reason, not quietly omitted.</p>
@@ -233,9 +245,10 @@
 
   <figure>
     <img src="img/profile.png" alt="svpview Profile page: four traces plotted against depth, cast list on the right">
-    <figcaption><b>Figure 1.</b> The <b>Profile</b> page with four casts in memory. Traces are drawn on
-    independent scales so each uses the full width; the highlighted cast is opaque and the rest are dimmed, which
-    is what makes a ten&#8209;cast overlay readable. The status strip names the instrument, the link state, battery
+    <figcaption><b>Figure 1.</b> The <b>Profile</b> page: four casts overlaid with all four traces on &mdash;
+    the case that used to abort the program (&sect;2.3). Each trace has its own scale so it uses the full width;
+    the selected cast is opaque and the rest are dimmed, which is what makes an overlay readable. The summary line
+    under the controls belongs to the selected cast. The status strip names the instrument, the link state, battery
     hours, the last fix, the deploy verdict and whether the winch is answering.</figcaption>
   </figure>
 
@@ -288,19 +301,31 @@
   </figure>
 
   <h3>3.8&nbsp;&nbsp;Themes, and knowing which build you are looking at</h3>
+  <p>Dark and light come from one role&#8209;based palette table, so a widget never hard&#8209;codes an RGB value
+  and the two themes cannot drift apart. Same layout, same metrics, one word changed on the button that switches
+  them.</p>
+
+  <figure>
+    <img src="img/chart_light.png" alt="The chart page in the light theme">
+    <figcaption><b>Figure 5.</b> The light theme, on the same page as Figure&nbsp;7. Nothing about the layout
+    changes &mdash; only the palette, addressed by role: <span class="mono">panel</span>,
+    <span class="mono">plot_grid</span>, <span class="mono">text_dim</span>, <span class="mono">accent</span>.
+    A deck in sunlight and a dark bridge at 3&nbsp;a.m. are different rooms.</figcaption>
+  </figure>
+
   <div class="cols">
     <div>
-      <p>Dark and light come from one role&#8209;based palette table, so a widget never hard&#8209;codes an RGB
-      value and the two themes cannot drift apart.</p>
       <p>The window title carries the version and, once connected, the instrument and port &mdash; so a screenshot
-      identifies the build, and two profilers open at once can be told apart from the taskbar. The About box adds
-      the build stamp, SDL at runtime <em>and</em> the version it was compiled against, and the UI scale in
-      force: the four questions a support call opens with.</p>
+      identifies the build, and two profilers open at once can be told apart from the taskbar:</p>
+      <pre class="code">svpview 2026.08.12  -  SWiFT 46236 on /dev/ttyUSB0</pre>
+      <p>The About box adds the build stamp, SDL at runtime <em>and</em> the version it was compiled against
+      (those differ on a machine with a stale library), the UI scale in force, and the connected instrument: the
+      questions a support call opens with, answerable without asking the operator to run anything.</p>
     </div>
     <div>
       <figure style="margin-top:0">
-        <img src="img/about.png" alt="svpview About dialog">
-        <figcaption><b>Figure 5.</b> About &mdash; one OK button, because Apply and Cancel have nothing to act on
+        <img src="img/about_dialog.png" alt="svpview About dialog">
+        <figcaption><b>Figure 6.</b> About &mdash; one OK button, because Apply and Cancel have nothing to act on
         in a dialog that changes nothing.</figcaption>
       </figure>
     </div>
@@ -313,7 +338,7 @@
 
   <figure>
     <img src="img/chart.png" alt="svpview Chart page: cast markers, vessel track, graticule and scale bar">
-    <figcaption><b>Figure 6.</b> The <b>Chart</b> page. Cast markers with their time and maximum depth, the track
+    <figcaption><b>Figure 7.</b> The <b>Chart</b> page. Cast markers with their time and maximum depth, the track
     the instrument has been broadcasting, a graticule on whole minutes and seconds, a scale bar and a north arrow.
     The panel gives the live position, the track point count, and every cast&rsquo;s range from where the vessel
     is now. Drag pans, the wheel zooms about the cursor, a click selects the cast under it &mdash; and the Profile
@@ -484,10 +509,18 @@
   stand&#8209;in for Vigo&rsquo;s listener &mdash; the same depth sent again as <code>VP-002</code> was
   acknowledged, where a byte&#8209;identical repeat is not.</p>
 
+  <figure>
+    <img src="img/winch.png" alt="svpview Settings page, winch depth reporting section">
+    <figcaption><b>Figure 8.</b> The winch section of the <b>Settings</b> page: which adapter is in use, the
+    broadcast address that follows from it, what was last sent, and the three actions. &ldquo;Report selected cast
+    depth&rdquo; is the only button in the program that sends a depth, and it names what it will
+    send.</figcaption>
+  </figure>
+
   <h3>8.2&nbsp;&nbsp;Which adapter, and the broadcast address</h3>
   <figure>
-    <img src="img/network.png" alt="svpview network adapter picker listing connected adapters with address, mask and broadcast">
-    <figcaption><b>Figure 7.</b> The adapter picker lists only <em>connected</em> broadcast&#8209;capable adapters
+    <img src="img/network_dialog.png" alt="svpview network adapter picker listing connected adapters with address, mask and broadcast">
+    <figcaption><b>Figure 9.</b> The adapter picker lists only <em>connected</em> broadcast&#8209;capable adapters
     &mdash; up, running and holding an address &mdash; with the address, mask and the broadcast that will actually
     be used, and binds the winch socket to the chosen one.</figcaption>
   </figure>
@@ -567,6 +600,18 @@
   <p>The emulator deliberately does <em>not</em> share arithmetic with the code under test &mdash; it computes its
   own sound speed and its own vessel motion from constants written out locally. Sharing a helper would let a test
   pass because both sides made the same mistake.</p>
+
+  <h3>10.3&nbsp;&nbsp;What the tests did not catch</h3>
+  <p>Worth stating, since it is the honest half of the picture. The vertex&#8209;limit abort in &sect;2.3 is not
+  reachable from any unit test: it needs a real Nuklear draw list, a real font atlas and a window of a particular
+  size. It was found by driving the built application through an ordinary sequence &mdash; open four casts, tick
+  the trace boxes &mdash; and watching it die. 399 green assertions say nothing about that class of defect.</p>
+  <p>The screenshots in this document are therefore not decoration. Every one was taken by scripting the real
+  binary at the real UI scale, and <strong>three</strong> defects fell out of doing it: the abort above, a summary
+  row that was never drawn because it landed a few pixels beyond the panel&rsquo;s clip, and a scroll offset shared
+  between pages &mdash; scroll the settings page down, switch to the chart, and the chart&rsquo;s controls were off
+  the top of a page with no scrollbar to bring them back. All three are invisible to a test suite and obvious in a
+  screenshot.</p>
 
   <div class="callout">
     <span class="lbl">Where a test was wrong and the code was right</span>
