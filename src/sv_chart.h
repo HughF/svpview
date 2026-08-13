@@ -42,7 +42,8 @@ typedef struct {
 
 /* What the last frame drew, for the panel beside the chart to report on. */
 typedef struct {
-    int    plotted;           /* casts drawn                              */
+    int    plotted;           /* positioned casts inside the plot          */
+    int    off_view;          /* positioned casts outside it               */
     int    no_fix;            /* casts held in memory with no position    */
     int    track_points;
     bool   cursor_valid;      /* mouse was inside the plot                */

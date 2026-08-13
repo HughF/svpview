@@ -758,8 +758,14 @@ static void page_chart(SvUi *ui, struct nk_rect r)
         snprintf(sum[0], sizeof sum[0], "View  —");
     }
 
-    snprintf(sum[1], sizeof sum[1], "%d cast%s plotted", ui->chart_info.plotted,
-             ui->chart_info.plotted == 1 ? "" : "s");
+    int in_view = ui->chart_info.plotted;
+    int off_view = ui->chart_info.off_view;
+    if (off_view > 0)
+        snprintf(sum[1], sizeof sum[1], "%d of %d casts in view",
+                 in_view, in_view + off_view);
+    else
+        snprintf(sum[1], sizeof sum[1], "%d cast%s plotted", in_view,
+                 in_view == 1 ? "" : "s");
 
     const SvCast *sel_cast = sv_app_cast(ui->app, sel);
     if (sel_cast && sel_cast->has_fix && live) {

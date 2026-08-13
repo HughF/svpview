@@ -5,6 +5,23 @@ truth for release notes.
 
 ## [Unreleased]
 
+### Fixed — the chart drew outside itself (2026-08-13)
+- The track ran off the plot, across the toolbar and out of the window. Nuklear's
+  stroke and fill commands are not bounded by the rect the coordinates were
+  computed from, and everything on a chart is positioned by where it is in the
+  world, not by where the plot happens to be — so panning, zooming in, or simply
+  following a vessel that has moved put the track wherever the arithmetic said.
+  The data layers (track, cast markers and their labels, the live position) now
+  draw under their own scissor, intersected with the clip already in force so it
+  can only narrow. Chart furniture — graticule labels, scale bar, north arrow,
+  cursor readout — is drawn after the restore, as it belongs in the gutters.
+- Track segments with both ends off the same edge of the plot are now rejected
+  before drawing. Zoomed in, most of a track is not merely invisible but
+  thousands of screen-widths away, and vertices at that magnitude lose the
+  precision that places the end that *is* visible.
+- The summary read "4 casts plotted" over a chart showing two. It now says
+  "2 of 4 casts in view" whenever any positioned cast is outside the plot.
+
 ### Added — first working application (2026-08-11)
 
 Builds to a running program with `make`; `make test` runs 289 assertions

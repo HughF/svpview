@@ -58,6 +58,36 @@ static float gutter_left(struct nk_context *ctx, float scale)
     return w < min ? min : w;
 }
 
+/*
+ * Cohen–Sutherland region code, used only to reject a line with both ends off
+ * the same side of the plot. Panned or zoomed in, most of the track is off the
+ * chart and its coordinates run to millions of pixels; a segment like that is
+ * still turned into geometry, and at that magnitude the vertices lose the
+ * precision that would have put the visible end in the right place.
+ */
+enum { OC_L = 1, OC_R = 2, OC_T = 4, OC_B = 8 };
+
+static int outcode(struct nk_rect r, float x, float y)
+{
+    int c = 0;
+    if (x < r.x)          c |= OC_L;
+    if (x > r.x + r.w)    c |= OC_R;
+    if (y < r.y)          c |= OC_T;
+    if (y > r.y + r.h)    c |= OC_B;
+    return c;
+}
+
+/* Intersection of two rects, empty (w or h <= 0) if they do not overlap.
+ * nk_unify() would do this but it is internal to the implementation unit. */
+static struct nk_rect rect_clip(struct nk_rect a, struct nk_rect b)
+{
+    float x0 = a.x > b.x ? a.x : b.x;
+    float y0 = a.y > b.y ? a.y : b.y;
+    float x1 = (a.x + a.w) < (b.x + b.w) ? (a.x + a.w) : (b.x + b.w);
+    float y1 = (a.y + a.h) < (b.y + b.h) ? (a.y + a.h) : (b.y + b.h);
+    return nk_rect(x0, y0, x1 - x0, y1 - y0);
+}
+
 static struct nk_color fade(struct nk_color c, struct nk_color bg, float k)
 {
     struct nk_color o;
@@ -359,9 +389,25 @@ void sv_chart_draw(struct nk_context *ctx, struct nk_rect area,
     draw_graticule(ctx, cb, t, scale, in, &pr, mpp);
     nk_stroke_rect(cb, in, 0.0f, 1.0f, t->plot_axis);
 
+    /*
+     * Everything from here to the restore below is positioned by where it is
+     * in the world, not by the plot rect, so with the view panned or following
+     * a moving vessel it lands outside the chart. Nuklear's stroke and fill
+     * commands are not bounded by the rect they were computed from — the track
+     * drew itself straight across the toolbar and off the window — so the data
+     * layers get their own scissor. It is intersected with the clip already in
+     * force, which is the panel's, so this can only ever narrow it.
+     */
+    struct nk_rect clip_outer = cb->clip;
+    struct nk_rect clip_plot = rect_clip(clip_outer, in);
+    if (clip_plot.w <= 0.0f || clip_plot.h <= 0.0f)
+        clip_plot = nk_rect(in.x, in.y, 0.0f, 0.0f);
+    nk_push_scissor(cb, clip_plot);
+
     /* ---- track ----------------------------------------------------- */
     struct nk_color track_col = fade(t->trace_temp, t->plot_bg, 0.55f);
     float px = 0, py = 0;
+    int prev_oc = 0;
     bool have_prev = false;
 
     for (int i = 0; i < n_track; i++) {
@@ -369,18 +415,23 @@ void sv_chart_draw(struct nk_context *ctx, struct nk_rect area,
         sv_geo_forward(&pr, track[i].lat, track[i].lon, &e, &n);
         float x = cx + (float)(e / mpp);
         float y = cy - (float)(n / mpp);
+        int oc = outcode(in, x, y);
 
-        if (have_prev)
+        /* Both ends off the same edge cannot cross the plot. A segment with
+         * one end inside, or ends on opposite sides, is drawn whole and left
+         * to the scissor. */
+        if (have_prev && (prev_oc & oc) == 0)
             nk_stroke_line(cb, px, py, x, y, 1.4f * scale, track_col);
         px = x;
         py = y;
+        prev_oc = oc;
         have_prev = true;
     }
 
     /* ---- casts ----------------------------------------------------- */
     struct nk_rect taken[MAX_LABELS];
     int n_taken = 0;
-    int plotted = 0;
+    int plotted = 0, off_view = 0;
     int hit = -1;
     float hit_d2 = HIT_R * scale * HIT_R * scale;
     float fh = ctx->style.font->height;
@@ -394,8 +445,17 @@ void sv_chart_draw(struct nk_context *ctx, struct nk_rect area,
         sv_geo_forward(&pr, c->lat, c->lon, &e, &n);
         float x = cx + (float)(e / mpp);
         float y = cy - (float)(n / mpp);
-        plotted++;
 
+        /* Counted by whether it is actually on the chart, not by whether it
+         * has a position: with the plot clipped, a panel claiming four casts
+         * over a chart showing two is just wrong. */
+        if (outcode(in, x, y) == 0)
+            plotted++;
+        else
+            off_view++;
+
+        /* Drawn a little beyond the edge as well, so a marker on the boundary
+         * appears as the part of itself that belongs inside. */
         if (x < in.x - 40 || x > in.x + in.w + 40 ||
             y < in.y - 40 || y > in.y + in.h + 40)
             continue;
@@ -480,6 +540,10 @@ void sv_chart_draw(struct nk_context *ctx, struct nk_rect area,
             nk_fill_circle(cb, nk_rect(x - r, y - r, r * 2, r * 2), col);
     }
 
+    /* Back to the panel's clip: what follows is chart furniture, drawn in the
+     * plot's own coordinates and allowed to sit in the gutters. */
+    nk_push_scissor(cb, clip_outer);
+
     draw_scale_bar(ctx, cb, t, scale, in, mpp);
     draw_north(ctx, cb, t, scale, in);
 
@@ -531,6 +595,7 @@ void sv_chart_draw(struct nk_context *ctx, struct nk_rect area,
 
     if (out) {
         out->plotted      = plotted;
+        out->off_view     = off_view;
         out->no_fix       = no_fix;
         out->track_points = n_track;
         out->cursor_valid = inside;
