@@ -5,6 +5,21 @@ truth for release notes.
 
 ## [Unreleased]
 
+### Fixed — dialogs kept the theme the user had just left (2026-08-17)
+- In light mode the About dialog came up with a black body under the light
+  theme's black text, which made most of it illegible. The theme was being
+  switched from inside the navigation rail's draw, and the rail holds a
+  `nk_style_push` on the window background for the duration: applying a theme
+  rewrites the whole style, so the matching pop put the *previous* theme's
+  background back. Every window that does not set its own background — the
+  dialogs — was then painted in the theme just left. The switch now happens at
+  the top of a frame, where the style stack is empty; the frame in which the
+  button was clicked draws entirely in the old theme and the next entirely in
+  the new.
+- Dialogs name their own surface from the theme, as the rail, action bar and
+  content window already did, so a dialog's background is a property of the
+  dialog rather than of whatever drew before it.
+
 ### Fixed — the chart drew outside itself (2026-08-13)
 - The track ran off the plot, across the toolbar and out of the window. Nuklear's
   stroke and fill commands are not bounded by the rect the coordinates were

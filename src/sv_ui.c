@@ -104,6 +104,7 @@ struct SvUi {
 
     const SvTheme *theme;
     bool     dark;
+    bool     theme_toggle;     /* switch themes at the top of the next frame */
     float    scale;
     SvPage   page;
     bool     quit;
@@ -443,11 +444,8 @@ static void draw_rail(SvUi *ui, struct nk_rect r)
         }
 
         nk_layout_row_dynamic(c, S(ui, 30), 1);
-        if (nk_button_label(c, ui->dark ? "Light theme" : "Dark theme")) {
-            ui->dark = !ui->dark;
-            ui->theme = ui->dark ? &SV_THEME_DARK : &SV_THEME_LIGHT;
-            sv_theme_apply(c, ui->theme, ui->scale);
-        }
+        if (nk_button_label(c, ui->dark ? "Light theme" : "Dark theme"))
+            ui->theme_toggle = true;   /* acted on in sv_ui_frame; see there */
     }
     nk_end(c);
 
@@ -1830,6 +1828,12 @@ static void draw_dialog(SvUi *ui, int w, int h)
     nk_style_push_float(c, &c->style.window.border, 1.0f);
     nk_style_push_color(c, &c->style.window.border_color, t->border);
 
+    /* Named from the theme rather than inherited from the ambient style, as
+     * the rail, action bar and content window all do: a dialog's surface is
+     * then a property of the dialog and not of whatever drew last. */
+    nk_style_push_style_item(c, &c->style.window.fixed_background,
+                             nk_style_item_color(t->panel));
+
     /*
      * nk_begin does not resize a window that already exists and is movable,
      * so the measured size has to be pushed in explicitly — and before
@@ -1951,6 +1955,7 @@ static void draw_dialog(SvUi *ui, int w, int h)
     }
     nk_end(c);
 
+    nk_style_pop_style_item(c);
     nk_style_pop_color(c);
     nk_style_pop_float(c);
 }
@@ -1988,6 +1993,30 @@ static void update_title(SvUi *ui)
 void sv_ui_frame(SvUi *ui, int w, int h)
 {
     struct nk_context *c = ui->ctx;
+
+    /*
+     * Themes are switched here, at the top of a frame, and never from the
+     * button that asks for it.
+     *
+     * sv_theme_apply rewrites the whole style, including any entry that an
+     * outstanding nk_style_push_* is holding the previous value of — the
+     * matching pop then puts that previous value back. The rail pushes
+     * window.fixed_background, and the theme button is inside the rail, so
+     * switching there left the background of every window that does not set
+     * its own painted in the theme the user had just left. In light mode the
+     * About dialog came up with a black body under the light theme's black
+     * text, which is most of the dialog illegible.
+     *
+     * The style stack is empty at this point, so nothing is left holding a
+     * stale value. The frame in which the button was clicked draws entirely
+     * in the old theme and this one draws entirely in the new.
+     */
+    if (ui->theme_toggle) {
+        ui->theme_toggle = false;
+        ui->dark = !ui->dark;
+        ui->theme = ui->dark ? &SV_THEME_DARK : &SV_THEME_LIGHT;
+        sv_theme_apply(c, ui->theme, ui->scale);
+    }
 
     update_title(ui);
 
