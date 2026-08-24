@@ -52,6 +52,7 @@
 #include "sv_export.h"
 #include "sv_vigo.h"
 #include "sv_version.h"
+#include "sv_help.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,12 +84,23 @@
 
 typedef enum {
     PAGE_LIVE = 0, PAGE_PROFILE, PAGE_CHART, PAGE_FILES, PAGE_SETTINGS,
-    PAGE_LOG,
+    PAGE_LOG, PAGE_HELP,
     PAGE_COUNT
 } SvPage;
 
 static const char *PAGE_NAME[PAGE_COUNT] = {
-    "Live", "Profile", "Chart", "Files", "Settings", "Log"
+    "Live", "Profile", "Chart", "Files", "Settings", "Log", "Help"
+};
+
+/* What the rail's page buttons say when hovered. */
+static const char *PAGE_HINT[PAGE_COUNT] = {
+    "What the instrument is measuring now, plotted as it arrives",
+    "The casts in memory, plotted against depth",
+    "Where the casts were taken, in plan, with the vessel's track",
+    "The instrument's memory card: browse it and download casts",
+    "The connection, the instrument's own configuration, and winch reporting",
+    "Every line exchanged with the instrument",
+    "The manual, for the page you are on and everything else"
 };
 
 typedef enum {
@@ -152,6 +164,13 @@ struct SvUi {
 
     char     title[192];       /* last title pushed to the window manager */
     SvPage   last_page;        /* to notice a page change; see sv_ui_frame */
+
+    /* Tooltips. tip_text is this frame's candidate, tip_shown the one the
+     * pointer has rested on long enough to be drawn. */
+    char     tip_text[256];
+    struct nk_rect tip_over;
+    char     tip_shown[256];
+    uint64_t tip_since_ms;
 };
 
 /* ------------------------------------------------------------------ */
@@ -159,6 +178,208 @@ struct SvUi {
 /* ------------------------------------------------------------------ */
 
 static float S(const SvUi *ui, float v) { return v * ui->scale; }
+
+/* ------------------------------------------------------------------ */
+/* Tooltips                                                            */
+/*                                                                     */
+/* Every control that does something says what it does when the pointer */
+/* rests on it. tip() is called immediately before the widget, the way  */
+/* Nuklear's own nk_widget_is_hovered() idiom works, because the bounds */
+/* being tested are the ones the *next* widget will occupy.            */
+/*                                                                     */
+/* Nuklear has nk_tooltip(), and it is not usable here: it draws into   */
+/* the current window, so a hint on the 132 px navigation rail would be */
+/* cut off at the rail's edge, and it only reports a hover for the      */
+/* focused window, which the rail is not until it has been clicked.     */
+/* ------------------------------------------------------------------ */
+
+#define TIP_DELAY_MS 400        /* dwell before a hint appears           */
+#define TIP_MAX_W    320.0f     /* unscaled; wider than this it wraps    */
+#define TIP_MAX_LINES  4
+
+typedef struct { int off, len; } SvLine;
+
+static float text_w(const SvUi *ui, const char *s, int len)
+{
+    const struct nk_user_font *f = ui->ctx->style.font;
+    if (!f || len <= 0)
+        return 0.0f;
+    return f->width(f->userdata, f->height, s, len);
+}
+
+/*
+ * Greedy word wrap, the same rule Nuklear applies when it draws a wrapped
+ * label. Used to size the tooltip panel, and to give the help page a row
+ * height that matches the text that will land in it.
+ *
+ * Widths are summed word by word rather than measured character by
+ * character: the font's width function adds glyph advances with no kerning,
+ * so the two agree, and this one is linear in the length of the string
+ * instead of quadratic. Returns the number of lines, whether or not there
+ * was room to record them.
+ */
+static int wrap_text(const SvUi *ui, const char *s, float w,
+                     SvLine *out, int max_out)
+{
+    float space = text_w(ui, " ", 1);
+    int lines = 0, start = 0, i = 0;
+    float cur = 0.0f;
+
+    while (s[i]) {
+        int ws = i;
+        while (s[i] && s[i] != ' ')
+            i++;
+        float word = text_w(ui, s + ws, i - ws);
+
+        if (cur > 0.0f && cur + space + word > w) {
+            if (out && lines < max_out) {
+                out[lines].off = start;
+                out[lines].len = ws - 1 - start;   /* drop the space */
+            }
+            lines++;
+            start = ws;
+            cur = word;
+        } else {
+            cur += (cur > 0.0f ? space : 0.0f) + word;
+        }
+
+        while (s[i] == ' ')
+            i++;
+    }
+
+    if (out && lines < max_out) {
+        out[lines].off = start;
+        out[lines].len = i - start;
+    }
+    return lines + 1;
+}
+
+/* Height a wrapped label needs for `text` in a column `w` wide. */
+static float wrap_height(const SvUi *ui, const char *text, float w)
+{
+    int n = wrap_text(ui, text, w, NULL, 0);
+    return (float)n * (ui->ctx->style.font->height + S(ui, 4));
+}
+
+/*
+ * Register a hint for the widget that is about to be laid out. The last one
+ * registered in a frame wins, which is what makes the innermost widget under
+ * the pointer the one that speaks.
+ */
+static void tip(SvUi *ui, const char *text)
+{
+    struct nk_context *c = ui->ctx;
+
+    if (!text || !text[0] || !c->current || !c->current->layout)
+        return;
+
+    /* A dropdown open over this window is covering whatever is underneath,
+     * so nothing under it should claim the pointer. */
+    if (c->current->popup.active)
+        return;
+
+    /* Nothing pops up mid-click: a hint appearing under the pointer as a
+     * button goes down is in the way of the next thing the operator does. */
+    if (c->input.mouse.buttons[NK_BUTTON_LEFT].down)
+        return;
+
+    struct nk_rect b = nk_widget_bounds(c);
+    struct nk_rect clip = c->current->layout->clip;
+
+    /* The clip is the group or panel the widget sits in, so a row scrolled
+     * out of a list does not answer for a pointer that is somewhere else. */
+    if (!nk_input_is_mouse_hovering_rect(&c->input, b) ||
+        !nk_input_is_mouse_hovering_rect(&c->input, clip))
+        return;
+
+    snprintf(ui->tip_text, sizeof ui->tip_text, "%s", text);
+    ui->tip_over = b;
+}
+
+/*
+ * Draw the hint the pointer has rested on, after every window is finished.
+ *
+ * It goes in ctx->overlay, the buffer Nuklear links in last of all. A tooltip
+ * belongs to no window: anchored to a control at the edge of a panel it has
+ * to be free to hang over the panel next door, and it has to sit above a
+ * dialog rather than behind it. The scissor is set explicitly because the
+ * renderer inherits whatever clip the last window left behind.
+ *
+ * Nuklear uses this same buffer for a software mouse cursor, and would
+ * re-initialise it underneath us — but only once nk_style_load_all_cursors()
+ * has been called, and this program draws the system cursor instead.
+ */
+static void tip_draw(SvUi *ui, int w, int h)
+{
+    struct nk_context *c = ui->ctx;
+    const SvTheme *t = ui->theme;
+
+    if (!ui->tip_text[0]) {
+        ui->tip_shown[0] = '\0';
+        return;
+    }
+
+    /* The dwell is against the text, not the pointer: sliding along a row of
+     * buttons re-arms it, but moving within one control does not. */
+    if (strcmp(ui->tip_text, ui->tip_shown) != 0) {
+        snprintf(ui->tip_shown, sizeof ui->tip_shown, "%s", ui->tip_text);
+        ui->tip_since_ms = plat_now_ms();
+        return;
+    }
+    if (plat_now_ms() - ui->tip_since_ms < TIP_DELAY_MS)
+        return;
+
+    SvLine ln[TIP_MAX_LINES];
+    int n = wrap_text(ui, ui->tip_shown, S(ui, TIP_MAX_W), ln, TIP_MAX_LINES);
+    if (n > TIP_MAX_LINES)
+        n = TIP_MAX_LINES;
+
+    float lh = c->style.font->height + S(ui, 3);
+    float pad_x = S(ui, 9), pad_y = S(ui, 6);
+    float tw = 0.0f;
+    for (int i = 0; i < n; i++) {
+        float lw = text_w(ui, ui->tip_shown + ln[i].off, ln[i].len);
+        if (lw > tw) tw = lw;
+    }
+
+    struct nk_rect r;
+    r.w = tw + pad_x * 2.0f;
+    r.h = (float)n * lh + pad_y * 2.0f;
+
+    /* Below the control it belongs to, flipping above when there is no room
+     * — anchored to the control rather than the pointer, so it does not jitter
+     * as the mouse moves inside the button. */
+    r.x = ui->tip_over.x;
+    r.y = ui->tip_over.y + ui->tip_over.h + S(ui, 6);
+    if (r.y + r.h > (float)h - S(ui, 4))
+        r.y = ui->tip_over.y - r.h - S(ui, 6);
+    if (r.y < S(ui, 4))
+        r.y = S(ui, 4);
+    if (r.x + r.w > (float)w - S(ui, 4))
+        r.x = (float)w - r.w - S(ui, 4);
+    if (r.x < S(ui, 4))
+        r.x = S(ui, 4);
+
+    struct nk_command_buffer *cb = &c->overlay;
+    nk_command_buffer_init(cb, &c->memory, NK_CLIPPING_ON);
+    nk_start_buffer(c, cb);
+    nk_push_scissor(cb, nk_rect(0, 0, (float)w, (float)h));
+
+    float rad = S(ui, 3);
+    nk_fill_rect(cb, nk_rect(r.x + S(ui, 2), r.y + S(ui, 2), r.w, r.h),
+                 rad, nk_rgba(0, 0, 0, t->is_light ? 36 : 90));
+    nk_fill_rect(cb, r, rad, t->panel_alt);
+    nk_stroke_rect(cb, r, rad, 1.0f, t->border);
+
+    for (int i = 0; i < n; i++) {
+        struct nk_rect lr = nk_rect(r.x + pad_x, r.y + pad_y + (float)i * lh,
+                                    tw, lh);
+        nk_draw_text(cb, lr, ui->tip_shown + ln[i].off, ln[i].len,
+                     c->style.font, t->panel_alt, t->text);
+    }
+
+    nk_finish_buffer(c, cb);
+}
 
 /*
  * Height for the big plot on a page laid out as: one control row, a gap, the
@@ -432,18 +653,23 @@ static void draw_rail(SvUi *ui, struct nk_rect r)
         for (int i = 0; i < PAGE_COUNT; i++) {
             nk_layout_row_dynamic(c, S(ui, 32), 1);
             nk_bool on = (ui->page == (SvPage)i);
+            tip(ui, PAGE_HINT[i]);
             if (nk_selectable_label(c, PAGE_NAME[i], NK_TEXT_LEFT, &on) && on)
                 ui->page = (SvPage)i;
         }
 
         gap(ui, 10);
         nk_layout_row_dynamic(c, S(ui, 30), 1);
+        tip(ui, "Version, build and licence, and what the instrument "
+                "reported about itself");
         if (nk_button_label(c, "About...")) {
             ui->dlg_error[0] = ui->dlg_note[0] = '\0';
             ui->dialog = DLG_ABOUT;
         }
 
         nk_layout_row_dynamic(c, S(ui, 30), 1);
+        tip(ui, ui->dark ? "Switch to the light theme, for daylight on deck"
+                         : "Switch to the dark theme, for a darkened bridge");
         if (nk_button_label(c, ui->dark ? "Light theme" : "Dark theme"))
             ui->theme_toggle = true;   /* acted on in sv_ui_frame; see there */
     }
@@ -567,12 +793,20 @@ static void page_profile(SvUi *ui, struct nk_rect r)
 
     nk_label_colored(c, "Traces", NK_TEXT_RIGHT, ui->theme->text_dim);
 
-    struct { const char *l; unsigned bit; } tr[4] = {
-        { "Velocity", SV_TRACE_SV },   { "Temp", SV_TRACE_TEMP },
-        { "Salinity", SV_TRACE_SAL },  { "Density", SV_TRACE_DENSITY }
+    struct { const char *l; unsigned bit; const char *hint; } tr[4] = {
+        { "Velocity", SV_TRACE_SV,
+          "Sound velocity against depth — the profile the survey wants" },
+        { "Temp", SV_TRACE_TEMP,
+          "Temperature against depth, for finding the thermocline" },
+        { "Salinity", SV_TRACE_SAL,
+          "Salinity against depth. A SWiFT SVP derives it from sound "
+          "velocity; a CTD measures it" },
+        { "Density", SV_TRACE_DENSITY,
+          "Density against depth, computed from the other three" }
     };
     for (int i = 0; i < 4; i++) {
         nk_bool on = (ui->traces & tr[i].bit) != 0;
+        tip(ui, tr[i].hint);
         nk_checkbox_label(c, tr[i].l, &on);
         if (on) ui->traces |= tr[i].bit;
         else    ui->traces &= ~tr[i].bit;
@@ -580,8 +814,12 @@ static void page_profile(SvUi *ui, struct nk_rect r)
 
     nk_spacing(c, 1);
 
+    tip(ui, n > 0 ? "Trim, despike, bin or thin the selected cast"
+                  : "Nothing to process until a cast is loaded");
     if (nk_button_label(c, "Process...") && n > 0)
         ui->dialog = DLG_PROCESS;
+    tip(ui, n > 0 ? "Write the selected cast out in a survey format"
+                  : "Nothing to export until a cast is loaded");
     if (nk_button_label(c, "Export...") && n > 0) {
         const SvCast *cast = sv_app_cast(ui->app, sel);
         if (cast)
@@ -647,6 +885,8 @@ static void page_profile(SvUi *ui, struct nk_rect r)
 
         nk_layout_row_dynamic(c, S(ui, 24), 1);
         nk_bool ov = ui->overlay != 0;
+        tip(ui, "Draw every cast in memory at once, with the selected one "
+                "picked out — how the water column has changed through the day");
         nk_checkbox_label(c, "Overlay all", &ov);
         ui->overlay = ov;
 
@@ -661,6 +901,8 @@ static void page_profile(SvUi *ui, struct nk_rect r)
 
             nk_layout_row_dynamic(c, S(ui, 26), 1);
             nk_bool on = (i == sel);
+            tip(ui, "Plot this cast, and make it the one Process, Export and "
+                    "the depth report act on");
             if (nk_selectable_label(c, lab, NK_TEXT_LEFT, &on) && on)
                 sv_app_select_cast(ui->app, i);
         }
@@ -711,6 +953,7 @@ static void page_chart(SvUi *ui, struct nk_rect r)
     nk_layout_row_template_push_dynamic(c);
     nk_layout_row_template_end(c);
 
+    tip(ui, "Set the view to contain every cast and the whole track");
     if (nk_button_label(c, "Fit"))
         sv_chart_request_fit(&ui->chart);
 
@@ -718,16 +961,23 @@ static void page_chart(SvUi *ui, struct nk_rect r)
                                     ui->chart_info.plot.w / 2,
                                     ui->chart_info.plot.y +
                                     ui->chart_info.plot.h / 2);
+    tip(ui, "Zoom in about the middle of the chart. The wheel zooms about "
+            "the pointer");
     if (nk_button_label(c, "+"))
         sv_chart_zoom(&ui->chart, &ui->chart_info, 2.0, centre);
+    tip(ui, "Zoom out about the middle of the chart");
     if (nk_button_label(c, "-"))
         sv_chart_zoom(&ui->chart, &ui->chart_info, 0.5, centre);
 
     nk_bool labels = ui->chart.labels;
+    tip(ui, "Draw the time of each cast beside its marker");
     nk_checkbox_label(c, "Labels", &labels);
     ui->chart.labels = labels;
 
     nk_bool follow = ui->chart.follow;
+    tip(ui, live ? "Keep the live position centred as the vessel moves. "
+                   "Selecting a cast turns this off"
+                 : "Nothing to follow until the instrument broadcasts a fix");
     nk_checkbox_label(c, "Follow position", &follow);
     if (follow && !live)
         follow = nk_false;                  /* nothing to follow */
@@ -904,6 +1154,11 @@ static void page_chart(SvUi *ui, struct nk_rect r)
 
             nk_layout_row_dynamic(c, S(ui, 26), 1);
             nk_bool on = (i == sel);
+            tip(ui, cast->has_fix
+                    ? "Select this cast. The view stops following the vessel "
+                      "so it stays where you put it"
+                    : "Select this cast. It was logged with no GPS fix, so it "
+                      "has no marker on the chart");
             if (nk_selectable_label(c, lab, NK_TEXT_LEFT, &on) && on) {
                 sv_app_select_cast(ui->app, i);
                 ui->chart.follow = false;
@@ -951,8 +1206,10 @@ static void page_files(SvUi *ui, struct nk_rect r)
     nk_label(c, st->cwd[0] ? st->cwd : "\\", NK_TEXT_LEFT);
 
     if (busy) nk_widget_disable_begin(c);
+    tip(ui, "List the top of the instrument's memory card");
     if (nk_button_label(c, "Root"))
         sv_app_list_dir(ui->app, "\\");
+    tip(ui, "List this directory again");
     if (nk_button_label(c, "Refresh"))
         sv_app_list_dir(ui->app, NULL);
     if (busy) nk_widget_disable_end(c);
@@ -1007,6 +1264,7 @@ static void page_files(SvUi *ui, struct nk_rect r)
 
             if (busy) nk_widget_disable_begin(c);
             if (f->is_dir) {
+                tip(ui, "Open this directory");
                 if (nk_button_label(c, "Open")) {
                     char path[SV_MAX_PATH];
                     snprintf(path, sizeof path, "%.256s\\%.120s",
@@ -1014,6 +1272,8 @@ static void page_files(SvUi *ui, struct nk_rect r)
                     sv_app_list_dir(ui->app, path);
                 }
             } else if (strstr(f->name, ".bin")) {
+                tip(ui, "Fetch this cast into memory, and report its depth "
+                        "to the winch");
                 if (nk_button_label(c, "Download"))
                     sv_app_download(ui->app, f->name);
             } else {
@@ -1056,6 +1316,7 @@ static void page_settings(SvUi *ui, struct nk_rect r)
 
     if (busy) nk_widget_disable_begin(c);
     if (st->link == SV_LINK_CLOSED) {
+        tip(ui, "Choose the serial port the cable or the Bluetooth key is on");
         if (primary_button(ui, "Connect...")) {
             ui->n_ports = plat_serial_list(ui->ports, PLAT_MAX_PORTS);
             ui->sel_port = 0;
@@ -1064,10 +1325,15 @@ static void page_settings(SvUi *ui, struct nk_rect r)
         }
         nk_spacing(c, 2);
     } else {
+        tip(ui, "Close the port. The instrument carries on logging");
         if (nk_button_label(c, "Disconnect"))
             sv_app_disconnect(ui->app);
+        tip(ui, "Send the instrument back to logging and broadcasting. "
+                "Leave it in run mode before deploying");
         if (nk_button_label(c, "Run mode"))
             sv_app_run_mode(ui->app);
+        tip(ui, "Stop the instrument at its command prompt so its card and "
+                "settings can be read. It logs nothing in this state");
         if (nk_button_label(c, "Interrupt"))
             sv_app_interrupt(ui->app);
     }
@@ -1106,8 +1372,12 @@ static void page_settings(SvUi *ui, struct nk_rect r)
 
     bool offline = (st->link == SV_LINK_CLOSED);
     if (busy || offline) nk_widget_disable_begin(c);
+    tip(ui, "Read the configuration out of the instrument, so what is on "
+            "screen is what is in the instrument");
     if (nk_button_label(c, "Read"))
         sv_app_read_config(ui->app);
+    tip(ui, "Change the instrument's settings. Nothing is written until "
+            "Apply or OK");
     if (nk_button_label(c, "Edit...")) {
         ui->cfg = st->device;
         snprintf(ui->site_edit, sizeof ui->site_edit, "%s", st->device.site);
@@ -1142,10 +1412,16 @@ static void page_settings(SvUi *ui, struct nk_rect r)
     nk_layout_row_template_end(c);
     nk_spacing(c, 1);
 
+    tip(ui, "Send one probe and wait for the reply, to prove the winch can "
+            "hear this machine before a cast depends on it");
     if (nk_button_label(c, "Probe winch"))
         sv_app_probe_winch(ui->app);
 
     if (sv_app_cast_count(ui->app) == 0) nk_widget_disable_begin(c);
+    tip(ui, sv_app_cast_count(ui->app) > 0
+            ? "Send the selected cast's depth to the winch now. Downloading "
+              "a cast does this automatically; this repeats it"
+            : "No cast in memory to report");
     if (primary_button(ui, "Report selected cast depth")) {
         const char *err = sv_app_report_depth(ui->app);
         if (err)
@@ -1153,6 +1429,8 @@ static void page_settings(SvUi *ui, struct nk_rect r)
     }
     if (sv_app_cast_count(ui->app) == 0) nk_widget_disable_end(c);
 
+    tip(ui, "Choose which network adapter the depth report goes out of. On "
+            "a machine with more than one, the wrong choice is silent");
     if (nk_button_label(c, "Select adapter...")) {
         ui->n_nifs = plat_net_list_ifs(ui->nifs, PLAT_MAX_IFS);
         ui->sel_nif = -1;
@@ -1219,6 +1497,134 @@ static void page_log(SvUi *ui, struct nk_rect r)
     }
 }
 
+/*
+ * Help page — the manual from sv_help.c, laid out.
+ *
+ * The text column is capped rather than filled to the window: a paragraph
+ * run across a 27-inch screen is measurably harder to read, and every row
+ * here is one item of the same table that --help-doc writes out as Markdown.
+ */
+static void page_help(SvUi *ui, struct nk_rect r)
+{
+    struct nk_context *c = ui->ctx;
+    const SvTheme *t = ui->theme;
+    (void)r;
+
+    struct nk_rect region = nk_window_get_content_region(c);
+    float avail = region.w - c->style.text.padding.x * 2.0f - S(ui, 6);
+    float col = S(ui, 720.0f);
+    if (col > avail)
+        col = avail;
+    if (col < S(ui, 200))
+        col = S(ui, 200);
+
+    float key_w = S(ui, 190.0f);
+    float val_w = col - key_w - c->style.window.spacing.x;
+    if (val_w < S(ui, 120)) {
+        key_w = col * 0.35f;
+        val_w = col - key_w - c->style.window.spacing.x;
+    }
+
+    float ind_w = S(ui, 18.0f);
+    float bul_w = col - ind_w - c->style.window.spacing.x;
+
+    /*
+     * One column, `col` wide, and nothing after it.
+     *
+     * Not a trailing dynamic column filled with nk_spacing(): nk_spacing
+     * allocates whole rows when the count crosses the end of the row, so a
+     * spacer that "fills the rest of the line" silently adds a second row of
+     * the same height — which is what turned this page into a column of
+     * paragraphs separated by holes.
+     */
+    #define HELP_ROW1(h)  do {                                       \
+        nk_layout_row_template_begin(c, (h));                        \
+        nk_layout_row_template_push_static(c, col);                  \
+        nk_layout_row_template_end(c);                               \
+    } while (0)
+
+    nk_layout_row_dynamic(c, S(ui, 30), 1);
+    nk_label_colored(c, SVPVIEW_NAME "  " SVPVIEW_VERSION "  —  manual",
+                     NK_TEXT_LEFT, t->accent);
+
+    HELP_ROW1(wrap_height(ui, "x", col));
+    nk_label_colored(c,
+        "F1 opens this page. Rest the pointer on any control for a one-line "
+        "version of what it does.", NK_TEXT_LEFT, t->text_dim);
+
+    int n_sec = 0;
+    const SvHelpSection *sec = sv_help_sections(&n_sec);
+
+    for (int i = 0; i < n_sec; i++) {
+        gap(ui, 12);
+        nk_layout_row_dynamic(c, S(ui, 24), 1);
+        nk_label_colored(c, sec[i].title, NK_TEXT_LEFT, t->accent);
+
+        if (sec[i].intro) {
+            HELP_ROW1(wrap_height(ui, sec[i].intro, col));
+            nk_label_colored_wrap(c, sec[i].intro, t->text_dim);
+        }
+
+        for (int k = 0; k < sec[i].n_items; k++) {
+            const SvHelpItem *e = &sec[i].items[k];
+
+            switch (e->kind) {
+            case SV_HELP_TEXT:
+                HELP_ROW1(wrap_height(ui, e->a, col));
+                nk_label_colored_wrap(c, e->a, t->text_dim);
+                break;
+
+            case SV_HELP_SUB:
+                gap(ui, 4);
+                nk_layout_row_dynamic(c, S(ui, 22), 1);
+                nk_label_colored(c, e->a, NK_TEXT_LEFT, t->text);
+                break;
+
+            case SV_HELP_BULLET:
+                nk_layout_row_template_begin(c, wrap_height(ui, e->a, bul_w));
+                nk_layout_row_template_push_static(c, ind_w);
+                nk_layout_row_template_push_static(c, bul_w);
+                nk_layout_row_template_end(c);
+                nk_label_colored(c, "·",
+                                 NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_TOP,
+                                 t->text_faint);
+                nk_label_colored_wrap(c, e->a, t->text_dim);
+                break;
+
+            case SV_HELP_ROW: {
+                float hgt = wrap_height(ui, e->b ? e->b : "", val_w);
+                nk_layout_row_template_begin(c, hgt);
+                nk_layout_row_template_push_static(c, key_w);
+                nk_layout_row_template_push_static(c, val_w);
+                nk_layout_row_template_end(c);
+                /* Top, not middle: against a three-line description a
+                 * vertically centred key floats away from the line it
+                 * belongs to. */
+                nk_label_colored(c, e->a,
+                                 NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_TOP,
+                                 t->text);
+                nk_label_colored_wrap(c, e->b ? e->b : "", t->text_dim);
+                break;
+            }
+
+            case SV_HELP_NOTE:
+                HELP_ROW1(wrap_height(ui, e->a, col));
+                nk_label_colored_wrap(c, e->a, t->warn);
+                break;
+            }
+        }
+    }
+
+    gap(ui, 14);
+    HELP_ROW1(wrap_height(ui, "x", col));
+    nk_label_colored(c,
+        "The same text is written to docs/HELP.md by: svpview --help-doc",
+        NK_TEXT_LEFT, t->text_faint);
+    gap(ui, 10);
+
+    #undef HELP_ROW1
+}
+
 /* ------------------------------------------------------------------ */
 /* Dialogs                                                             */
 /* ------------------------------------------------------------------ */
@@ -1244,14 +1650,18 @@ static DlgResult dialog_buttons(SvUi *ui, bool can_apply)
 
     nk_spacing(c, 1);
 
+    tip(ui, "Discard the changes and close. Escape does the same");
     if (nk_button_label(c, "Cancel"))
         res = DLG_R_CANCEL;
 
     if (!can_apply) nk_widget_disable_begin(c);
+    tip(ui, can_apply ? "Commit the changes and leave this open"
+                      : "Nothing has been changed yet");
     if (nk_button_label(c, "Apply") && can_apply)
         res = DLG_R_APPLY;
     if (!can_apply) nk_widget_disable_end(c);
 
+    tip(ui, "Commit the changes and close");
     if (primary_button(ui, "OK"))
         res = DLG_R_OK;
 
@@ -1289,6 +1699,7 @@ static void dlg_connect_body(SvUi *ui)
             char lab[300];
             snprintf(lab, sizeof lab, "%s   —   %s",
                      ui->ports[i].path, ui->ports[i].label);
+            tip(ui, "Open the instrument on this port");
             if (nk_selectable_label(c, lab, NK_TEXT_LEFT, &on) && on)
                 ui->sel_port = i;
         }
@@ -1305,6 +1716,8 @@ static void dlg_connect_body(SvUi *ui)
     nk_layout_row_template_push_static(c, S(ui, 110));
     nk_layout_row_template_push_dynamic(c);
     nk_layout_row_template_end(c);
+    tip(ui, "Look for serial ports again, after plugging in the cable or "
+            "the Bluetooth key");
     if (nk_button_label(c, "Rescan")) {
         ui->n_ports = plat_serial_list(ui->ports, PLAT_MAX_PORTS);
         ui->sel_port = 0;
@@ -1347,6 +1760,8 @@ static void dlg_settings_body(SvUi *ui)
     form_row(ui, ROW_H);
     form_label(ui, "Operating mode");
     static const char *modes[] = { "Continuous", "Smart profile" };
+    tip(ui, "Smart profile logs a file per descent, which is what a winch "
+            "survey wants. Continuous logs everything from power-up");
     ui->cfg.operating_mode = nk_combo(c, modes, 2, ui->cfg.operating_mode,
                                       (int)S(ui, 22),
                                       nk_vec2(S(ui, 220), S(ui, 120)));
@@ -1354,6 +1769,8 @@ static void dlg_settings_body(SvUi *ui)
     form_row(ui, ROW_H);
     form_label(ui, "Profile direction");
     static const char *dirs[] = { "Down cast", "Up cast" };
+    tip(ui, "Which half of the dip is kept. Down cast is the normal choice: "
+            "the sensor leads the water it has disturbed");
     ui->cfg.direction = nk_combo(c, dirs, 2, ui->cfg.direction,
                                  (int)S(ui, 22),
                                  nk_vec2(S(ui, 220), S(ui, 120)));
@@ -1363,16 +1780,20 @@ static void dlg_settings_body(SvUi *ui)
 
     form_row(ui, ROW_H);
     form_label(ui, "Trigger depth  m");
+    tip(ui, "How deep the instrument must go before it starts a file");
     nk_property_double(c, "#", 0.1, &ui->cfg.trigger_depth, 100.0, 0.1,
                        (float)0.05);
 
     form_row(ui, ROW_H);
     form_label(ui, "Depth increment  m");
+    tip(ui, "The depth change between logged samples");
     nk_property_double(c, "#", 0.1, &ui->cfg.depth_increment, 100.0, 0.1,
                        (float)0.05);
 
     form_row(ui, ROW_H);
     form_label(ui, "Trigger step  m");
+    tip(ui, "How much the pressure must change to keep the file open. It "
+            "must exceed the local sea and swell, or the file closes early");
     nk_property_double(c, "#", 0.5, &ui->cfg.trigger_step, 100.0, 0.1,
                        (float)0.05);
 
@@ -1391,17 +1812,23 @@ static void dlg_settings_body(SvUi *ui)
     form_row(ui, ROW_H);
     form_label(ui, "Require GPS fix");
     nk_bool fix = ui->cfg.require_fix != 0;
+    tip(ui, "Wait for a GPS fix before logging, so every file carries a "
+            "position");
     nk_checkbox_label(c, "before logging in continuous mode", &fix);
     ui->cfg.require_fix = fix;
 
     form_row(ui, ROW_H);
     form_label(ui, "Bluetooth sleep");
     nk_bool sl = ui->cfg.bt_sleep_enabled != 0;
+    tip(ui, "Let the instrument be woken over Bluetooth instead of by the "
+            "magnet");
     nk_checkbox_label(c, "allow wake from sleep over Bluetooth", &sl);
     ui->cfg.bt_sleep_enabled = sl;
 
     form_row(ui, ROW_H);
     form_label(ui, "Auto power down  min");
+    tip(ui, "Idle minutes before the instrument switches itself off. "
+            "9999 disables it");
     nk_property_int(c, "#", 1, &ui->cfg.auto_power_min, 9999, 1, 1.0f);
 
     form_row(ui, ROW_H);
@@ -1416,6 +1843,8 @@ static void dlg_settings_body(SvUi *ui)
 
     form_row(ui, ROW_H);
     form_label(ui, "Site information");
+    tip(ui, "Free text stored in the instrument and written into the header "
+            "of every file it logs — the survey, or the vessel");
     nk_edit_string_zero_terminated(c, NK_EDIT_FIELD, ui->site_edit,
                                    SV_SITE_LEN - 1, nk_filter_default);
 
@@ -1462,6 +1891,8 @@ static void dlg_export_body(SvUi *ui)
     for (int i = 0; i < SV_EXPORT_COUNT; i++)
         names[i] = sv_export_name((SvExportFormat)i);
     int was = ui->export_fmt;
+    tip(ui, "The format the acquisition system reads. The file name follows "
+            "the format's own extension");
     ui->export_fmt = nk_combo(c, names, SV_EXPORT_COUNT, ui->export_fmt,
                               (int)S(ui, 22), nk_vec2(S(ui, 260), S(ui, 180)));
     if (ui->export_fmt != was)
@@ -1474,12 +1905,14 @@ static void dlg_export_body(SvUi *ui)
 
     form_row(ui, ROW_H);
     form_label(ui, "Folder");
+    tip(ui, "Where the file is written. The folder must already exist");
     nk_edit_string_zero_terminated(c, NK_EDIT_FIELD, ui->export_dir,
                                    sizeof ui->export_dir - 1,
                                    nk_filter_default);
 
     form_row(ui, ROW_H);
     form_label(ui, "File name");
+    tip(ui, "Proposed from the cast's own timestamp. Change it freely");
     nk_edit_string_zero_terminated(c, NK_EDIT_FIELD, ui->export_name,
                                    sizeof ui->export_name - 1,
                                    nk_filter_default);
@@ -1545,22 +1978,30 @@ static void dlg_process_body(SvUi *ui)
     form_row(ui, ROW_H);
     form_label(ui, "Trim");
     nk_bool dc = ui->proc_downcast != 0;
+    tip(ui, "Discard the ascent, which is measured through water the "
+            "instrument has already disturbed");
     nk_checkbox_label(c, "keep the down cast only", &dc);
     ui->proc_downcast = dc;
 
     form_row(ui, ROW_H);
     form_label(ui, "Despike");
     nk_bool ds = ui->proc_despike != 0;
+    tip(ui, "Remove single samples far off their neighbours — bubbles and "
+            "electrical noise, not water");
     nk_checkbox_label(c, "remove samples over 3 m/s off the local median",
                       &ds);
     ui->proc_despike = ds;
 
     form_row(ui, ROW_H);
     form_label(ui, "Depth bin  m");
+    tip(ui, "Average the samples into bins this many metres deep. 0 leaves "
+            "them alone");
     nk_property_float(c, "#", 0.0f, &ui->proc_bin, 50.0f, 0.1f, 0.05f);
 
     form_row(ui, ROW_H);
     form_label(ui, "Thin to  points");
+    tip(ui, "Reduce to about this many points, keeping the shape — for "
+            "systems that cap the length of a profile. 0 leaves it alone");
     nk_property_int(c, "#", 0, &ui->proc_thin_to, 20000, 10, 5.0f);
 
     form_row(ui, ROW_H);
@@ -1637,6 +2078,8 @@ static void dlg_network_body(SvUi *ui)
             char lab[256];
             snprintf(lab, sizeof lab, "%-14s  %-15s  %-15s  %s",
                      n->name, n->ip, n->mask, n->bcast);
+            tip(ui, "Send depth reports out of this adapter, to the "
+                    "broadcast address on its own subnet");
             if (nk_selectable_label(c, lab, NK_TEXT_LEFT, &on) && on)
                 ui->sel_nif = i;
         }
@@ -1654,12 +2097,16 @@ static void dlg_network_body(SvUi *ui)
     nk_layout_row_template_push_static(c, S(ui, 110));
     nk_layout_row_template_push_dynamic(c);
     nk_layout_row_template_end(c);
+    tip(ui, "Look for connected adapters again, after plugging into the "
+            "survey network");
     if (nk_button_label(c, "Rescan")) {
         ui->n_nifs = plat_net_list_ifs(ui->nifs, PLAT_MAX_IFS);
         if (ui->sel_nif >= ui->n_nifs)
             ui->sel_nif = -1;
     }
     nk_bool def = (ui->sel_nif < 0);
+    tip(ui, "Broadcast to 255.255.255.255 and let the routing table pick the "
+            "wire. Fine with one adapter, a silent winch with two");
     nk_checkbox_label(c, "use the default route instead", &def);
     if (def) ui->sel_nif = -1;
     else if (ui->sel_nif < 0 && ui->n_nifs > 0) ui->sel_nif = 0;
@@ -1795,6 +2242,10 @@ static void draw_dialog(SvUi *ui, int w, int h)
 {
     struct nk_context *c = ui->ctx;
     const SvTheme *t = ui->theme;
+
+    /* The page behind is unreachable, so nothing on it may answer for the
+     * pointer. Anything registered before now was drawn under the scrim. */
+    ui->tip_text[0] = '\0';
 
     /* Scrim: covers the page, dims it, and takes every click that is not on
      * the dialog — which is what makes the dialog modal. */
@@ -1933,6 +2384,7 @@ static void draw_dialog(SvUi *ui, int w, int h)
             nk_layout_row_template_push_static(c, S(ui, BTN_W));
             nk_layout_row_template_end(c);
             nk_spacing(c, 1);
+            tip(ui, "Close");
             res = primary_button(ui, "OK") ? DLG_R_OK : DLG_R_NONE;
             if (res == DLG_R_OK)
                 ui->dialog = DLG_NONE;
@@ -2020,6 +2472,9 @@ void sv_ui_frame(SvUi *ui, int w, int h)
 
     update_title(ui);
 
+    /* This frame's hint is collected as the controls are laid out. */
+    ui->tip_text[0] = '\0';
+
     float sh = S(ui, STATUS_H);
     float ah = S(ui, ACTION_H);
     float rw = S(ui, RAIL_W);
@@ -2035,8 +2490,9 @@ void sv_ui_frame(SvUi *ui, int w, int h)
 
     nk_style_push_style_item(c, &c->style.window.fixed_background,
                              nk_style_item_color(ui->theme->bg));
+    bool scrolls = (ui->page == PAGE_SETTINGS || ui->page == PAGE_HELP);
     if (nk_begin(c, "content", content,
-                 (ui->page == PAGE_SETTINGS) ? 0 : NK_WINDOW_NO_SCROLLBAR)) {
+                 scrolls ? 0 : NK_WINDOW_NO_SCROLLBAR)) {
 
         /*
          * Every page shares one Nuklear window, and so shares its scroll
@@ -2058,6 +2514,7 @@ void sv_ui_frame(SvUi *ui, int w, int h)
         case PAGE_FILES:    page_files(ui, inner);    break;
         case PAGE_SETTINGS: page_settings(ui, inner); break;
         case PAGE_LOG:      page_log(ui, inner);      break;
+        case PAGE_HELP:     page_help(ui, inner);     break;
         default: break;
         }
     }
@@ -2066,6 +2523,8 @@ void sv_ui_frame(SvUi *ui, int w, int h)
 
     if (ui->dialog != DLG_NONE)
         draw_dialog(ui, w, h);
+
+    tip_draw(ui, w, h);
 }
 
 /* ------------------------------------------------------------------ */
@@ -2240,6 +2699,11 @@ bool sv_ui_handle_event(SvUi *ui, SDL_Event *e)
     if (e->type == SDL_KEYDOWN && e->key.keysym.sym == SDLK_ESCAPE &&
         ui->dialog != DLG_NONE) {
         ui->dialog = DLG_NONE;     /* Escape is Cancel */
+        return true;
+    }
+    if (e->type == SDL_KEYDOWN && e->key.keysym.sym == SDLK_F1) {
+        ui->dialog = DLG_NONE;
+        ui->page = PAGE_HELP;
         return true;
     }
     return nk_sdl_handle_event(e) != 0;

@@ -13,7 +13,7 @@
 /*
  * sv_main.c — entry point and frame loop
  *
- *   svpview [--sim] [--open FILE]
+ *   svpview [--sim] [--open FILE] [--help-doc]
  *
  * --sim runs against an emulated SWiFT that speaks the real wire protocol,
  * so the whole program can be exercised without an instrument.
@@ -26,6 +26,7 @@
 #include "sv_app.h"
 #include "sv_ui.h"
 #include "sv_version.h"
+#include "sv_help.h"
 
 /* The size the layout is designed for at UI scale 1. sv_ui_fit_window()
  * turns it into the actual opening size once the UI knows the display's
@@ -39,7 +40,8 @@ static void usage(void)
     printf("  svpview [options]\n\n"
            "  --sim          run against a simulated instrument\n"
            "  --open FILE    load a .bin logged file at startup\n"
-           "  --help         this message\n\n"
+           "  --help         this message\n"
+           "  --help-doc     write the built-in manual to stdout as Markdown\n\n"
            "Environment:\n"
            "  SVPVIEW_SCALE  override the HiDPI UI scale (e.g. 2)\n");
 }
@@ -56,6 +58,11 @@ int main(int argc, char **argv)
             open_path = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0) {
             usage();
+            return 0;
+        } else if (strcmp(argv[i], "--help-doc") == 0) {
+            /* Before SDL is touched, so docs/HELP.md can be regenerated on a
+             * machine with no display. */
+            sv_help_write_markdown(stdout, SVPVIEW_VERSION);
             return 0;
         } else {
             fprintf(stderr, "svpview: unknown argument '%s'\n", argv[i]);

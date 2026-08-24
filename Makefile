@@ -49,7 +49,7 @@ SDL_LIBS   := $(shell sdl2-config --libs 2>/dev/null)
 
 # Portable core plus the app: no SDL, and the unit tests link against these.
 CORE = sv_ocean sv_geo sv_proto sv_binfile sv_profile sv_export sv_vigo \
-       sv_config sv_sim sv_app
+       sv_config sv_sim sv_app sv_help
 
 ifeq ($(OS),Windows_NT)
     PLAT = plat_win32
@@ -67,7 +67,7 @@ TESTS = test_ocean test_geo test_proto test_binfile test_vigo test_profile
 
 # ---------------------------------------------------------------------
 
-.PHONY: all clean test debug windows run
+.PHONY: all clean test debug windows run help-doc
 
 all: $(TARGET)
 
@@ -79,6 +79,17 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 
 $(OBJ_DIR):
 	@mkdir -p $(OBJ_DIR)
+
+# ---------------------------------------------------------------------
+# The manual lives in src/sv_help.c and is rendered two ways: the Help
+# page draws it, and this writes it out. docs/HELP.md is generated —
+# edit the source, not the Markdown.
+# ---------------------------------------------------------------------
+
+help-doc: $(TARGET)
+	./$(TARGET) --help-doc > docs/HELP.md
+	@echo "docs/HELP.md regenerated"
+
 
 -include $(OBJS:.o=.d)
 

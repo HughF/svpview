@@ -5,6 +5,30 @@ truth for release notes.
 
 ## [Unreleased]
 
+### Added — tooltips on every control, and a manual (2026-08-24)
+- Every control that does something now says what it does when the pointer
+  rests on it for 400 ms. The hint is written against the control, not the
+  pointer, so it does not jitter as the mouse moves inside a button, and it
+  says something different when the control is disabled — "Nothing to export
+  until a cast is loaded" rather than a dead button with no explanation.
+- The hints are drawn in Nuklear's overlay buffer rather than with
+  `nk_tooltip()`. Nuklear's own tooltip is drawn inside the current window, so
+  a hint on the 132 px navigation rail would be cut off at the rail's edge,
+  and it reports a hover only for the focused window — which the rail is not
+  until it has been clicked. The overlay is linked in last, above the dialogs,
+  and clipped to the screen instead.
+- A Help page, on the rail and on F1: the manual, in the program, for a
+  vessel with no internet. `docs/HELP.md` is the same text — both are rendered
+  from one table in `src/sv_help.c`, by the page and by `svpview --help-doc`
+  (`make help-doc`), so a control cannot be renamed in one and not the other.
+
+### Fixed — nk_spacing() was silently doubling row heights (2026-08-24)
+- `nk_spacing()` allocates whole *rows* when the count crosses the end of the
+  current row, so the common idiom of filling a row's last column with a
+  spacer adds a second row of the same height. On the help page that turned
+  every paragraph into a paragraph followed by a hole of the same size. Rows
+  there now end when their content does.
+
 ### Fixed — dialogs kept the theme the user had just left (2026-08-17)
 - In light mode the About dialog came up with a black body under the light
   theme's black text, which made most of it illegible. The theme was being

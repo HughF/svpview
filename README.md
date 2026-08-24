@@ -46,7 +46,13 @@ make test                        # every suite, ASan + UBSan
 | `--sim` | run against the built-in wire-level SWiFT emulator |
 | `--open FILE.bin` | load a logged file at startup |
 | `--help` | usage |
+| `--help-doc` | write the built-in manual to stdout as Markdown |
 | `SVPVIEW_SCALE=n` | override the detected HiDPI UI scale |
+
+Help is in the program: **F1** opens the manual, and every control describes
+itself if the pointer rests on it. The same text is [docs/HELP.md](docs/HELP.md),
+generated with `make help-doc` — the manual is a table in `src/sv_help.c`, so
+the page and the file cannot disagree.
 
 ## What it does
 
@@ -97,6 +103,7 @@ dependency.
 | [CHANGELOG.md](CHANGELOG.md) | Source of truth for release notes, including every bug found during bring-up |
 | [docs/SWIFT_PROTOCOL.md](docs/SWIFT_PROTOCOL.md) | SWiFT command codes, sentences, the three binary header variants |
 | [docs/VIGO_INTERFACE.md](docs/VIGO_INTERFACE.md) | Vigo profiler UDP protocol, the wire format, and every silent-drop rule |
+| [docs/HELP.md](docs/HELP.md) | The operator's manual — generated from `src/sv_help.c`, do not edit |
 
 The design document is self-contained HTML; the PDF is rendered from it with
 headless Chrome:
