@@ -193,7 +193,7 @@ static float S(const SvUi *ui, float v) { return v * ui->scale; }
 /* focused window, which the rail is not until it has been clicked.     */
 /* ------------------------------------------------------------------ */
 
-#define TIP_DELAY_MS 400        /* dwell before a hint appears           */
+#define TIP_DELAY_MS 800        /* dwell before a hint appears           */
 #define TIP_MAX_W    320.0f     /* unscaled; wider than this it wraps    */
 #define TIP_MAX_LINES  4
 

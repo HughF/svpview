@@ -7,7 +7,7 @@ truth for release notes.
 
 ### Added — tooltips on every control, and a manual (2026-08-24)
 - Every control that does something now says what it does when the pointer
-  rests on it for 400 ms. The hint is written against the control, not the
+  rests on it for 800 ms. The hint is written against the control, not the
   pointer, so it does not jitter as the mouse moves inside a button, and it
   says something different when the control is disabled — "Nothing to export
   until a cast is loaded" rather than a dead button with no explanation.
