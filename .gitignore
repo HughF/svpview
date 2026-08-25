@@ -9,3 +9,9 @@ tests/fuzz_*
 build/
 *.log
 third_party/*.o
+
+# Windows cross-build: the SDL2 SDK is fetched by tools/win/get-sdl2.sh,
+# and dist/ holds the packaged zip. Neither belongs in the repository.
+tools/win/SDL2-*/
+tools/win/SDL2-devel-*.tar.gz
+dist/

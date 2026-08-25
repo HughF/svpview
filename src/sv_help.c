@@ -47,6 +47,13 @@ static const SvHelpItem it_connect[] = {
       "computer as serial ports, at 230400 baud, 8N1. Open Settings and press "
       "Connect... to see the ports the machine can offer; if the one you want "
       "is not listed, plug it in and press Rescan."),
+    T("On Windows the ports are COM numbers, listed with the name Windows "
+      "knows them by — the Bluetooth key reads as \"Standard Serial over "
+      "Bluetooth link\" and the cable as a USB serial port. That difference "
+      "matters: the instrument switches its GPS off while the comms cable is "
+      "connected, so a cast set up over the cable will never be ready to "
+      "deploy. On Linux the same ports are /dev/ttyUSB and /dev/rfcomm names, "
+      "and the account must be in the dialout group to open one."),
     SUB("What the link state means"),
     R("Not connected", "No port is open. Nothing can be read or written."),
     R("Identifying",   "The port is open and the instrument is being asked "
@@ -294,6 +301,12 @@ static const SvHelpItem it_trouble[] = {
     R("Winch silent",
       "Wrong adapter, or the winch is not on this network. Probe it, then "
       "check the adapter."),
+    R("Winch silent on Windows only",
+      "Windows Firewall. The first broadcast raises a prompt, and a prompt "
+      "answered with Cancel — or never shown, on a machine with the firewall "
+      "locked down — blocks every depth report from then on, silently. Allow "
+      "svpview on the private network, or add an outbound rule for UDP 8090. "
+      "This looks exactly like a winch that is not listening."),
     R("Text too small or too large",
       "The interface scales itself to the display. Override it with the "
       "SVPVIEW_SCALE environment variable."),

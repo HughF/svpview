@@ -67,7 +67,7 @@ TESTS = test_ocean test_geo test_proto test_binfile test_vigo test_profile
 
 # ---------------------------------------------------------------------
 
-.PHONY: all clean test debug windows run help-doc
+.PHONY: all clean test debug windows windows-dist run help-doc
 
 all: $(TARGET)
 
@@ -130,14 +130,99 @@ run: $(TARGET)
 	./$(TARGET) --sim
 
 # ---------------------------------------------------------------------
-# Windows cross-build
+# Windows cross-build (mingw-w64)
+#
+#   make windows        build svpview.exe
+#   make windows-dist   exe + SDL2.dll + docs, zipped, in dist/
+#
+# Needs the mingw toolchain and the SDL2 mingw development SDK:
+#
+#   sudo pacman -S --needed mingw-w64-gcc          (Arch; apt: mingw-w64)
+#   tools/win/get-sdl2.sh                          (downloads and unpacks)
+#
+# Arch has no mingw pkg-config and no mingw SDL2 package, so the SDK is
+# pointed at by path rather than discovered. Override for another location:
+#
+#   make windows SDL2_MINGW=/path/to/SDL2-2.x.y/x86_64-w64-mingw32
+#
+# Objects go in their own directory. Sharing build/ with the native build
+# links host .o files into the .exe, which fails in ways that look like the
+# source is wrong.
 # ---------------------------------------------------------------------
 
-windows:
-	$(MAKE) CC=x86_64-w64-mingw32-gcc OS=Windows_NT \
-	        SDL_CFLAGS="$$(x86_64-w64-mingw32-pkg-config --cflags sdl2)" \
-	        SDL_LIBS="$$(x86_64-w64-mingw32-pkg-config --libs sdl2)" \
-	        TARGET=svpview.exe
+SDL2_VER   ?= 2.32.10
+SDL2_MINGW ?= tools/win/SDL2-$(SDL2_VER)/x86_64-w64-mingw32
+
+WIN_CC     = x86_64-w64-mingw32-gcc
+WIN_RC     = x86_64-w64-mingw32-windres
+WIN_OBJ    = $(OBJ_DIR)/win
+WIN_TARGET = svpview.exe
+WIN_RES    = $(WIN_OBJ)/svpview_res.o
+WIN_DIST   = dist/svpview-$(SV_VERSION)-win64
+
+# The version in the file's Properties tab is read out of the same header the
+# About dialog reads, so the two cannot disagree. Leading zeros are stripped:
+# the resource compiler reads 08 as a malformed octal constant.
+SV_VERSION := $(shell sed -n 's/.*SVPVIEW_VERSION "\([^"]*\)".*/\1/p' \
+                      $(SRC_DIR)/sv_version.h)
+SV_VER_A   := $(shell echo $(SV_VERSION) | cut -d. -f1 | sed 's/^0*//')
+SV_VER_B   := $(shell echo $(SV_VERSION) | cut -d. -f2 | sed 's/^0*//')
+SV_VER_C   := $(shell echo $(SV_VERSION) | cut -d. -f3 | sed 's/^0*//')
+
+WIN_OBJS = $(addprefix $(WIN_OBJ)/,\
+             $(addsuffix .o,$(CORE) plat_win32 $(UI)))
+
+# _USE_MATH_DEFINES: mingw's math.h hides M_PI in strict C99, which glibc
+# does not, so sv_ocean stops compiling at the first line of gravity.
+# __USE_MINGW_ANSI_STDIO: use mingw's own printf rather than the one in
+# MSVCRT, which has no %zu and would print the literal text instead.
+# Both SDL include paths: the program says <SDL2/SDL.h>, and the vendored
+# nuklear_sdl_renderer.h says <SDL.h>, which is what sdl2-config's -I gives
+# it on the native build.
+WIN_CFLAGS = -std=c99 -O2 $(WARN) -MMD -MP -I$(SRC_DIR) -Ithird_party \
+             -D_USE_MATH_DEFINES -D__USE_MINGW_ANSI_STDIO=1 \
+             -I$(SDL2_MINGW)/include -I$(SDL2_MINGW)/include/SDL2
+
+# -mwindows: no console window behind the application. --help and --help-doc
+# reattach to the parent console themselves, so nothing is lost from a
+# command prompt. -static-libgcc so the only DLL to ship is SDL2's.
+WIN_LDFLAGS = -mwindows -static-libgcc -L$(SDL2_MINGW)/lib
+WIN_LIBS    = -lmingw32 -lSDL2main -lSDL2 \
+              -lws2_32 -liphlpapi -lsetupapi -luuid -lm
+
+windows: $(WIN_TARGET)
+
+$(WIN_TARGET): $(WIN_OBJS) $(WIN_RES)
+	@test -f $(SDL2_MINGW)/lib/libSDL2.a || { \
+	    echo "No SDL2 mingw SDK at $(SDL2_MINGW)"; \
+	    echo "Run tools/win/get-sdl2.sh, or set SDL2_MINGW=<dir>"; \
+	    exit 1; }
+	$(WIN_CC) $(WIN_OBJS) $(WIN_RES) -o $@ $(WIN_LDFLAGS) $(WIN_LIBS)
+	@echo "built $@ — ship it with $(SDL2_MINGW)/bin/SDL2.dll"
+
+$(WIN_OBJ)/%.o: $(SRC_DIR)/%.c | $(WIN_OBJ)
+	$(WIN_CC) $(WIN_CFLAGS) $(NK_CFLAGS) -c $< -o $@
+
+$(WIN_RES): tools/win/svpview.rc tools/win/svpview.ico \
+            tools/win/svpview.manifest $(SRC_DIR)/sv_version.h | $(WIN_OBJ)
+	$(WIN_RC) -I tools/win -I $(SRC_DIR) \
+	    -DSV_VER_A=$(SV_VER_A) -DSV_VER_B=$(SV_VER_B) -DSV_VER_C=$(SV_VER_C) \
+	    -o $@ tools/win/svpview.rc
+
+$(WIN_OBJ):
+	@mkdir -p $(WIN_OBJ)
+
+-include $(WIN_OBJS:.o=.d)
+
+windows-dist: $(WIN_TARGET) help-doc
+	@rm -rf $(WIN_DIST)
+	@mkdir -p $(WIN_DIST)
+	cp $(WIN_TARGET) $(WIN_DIST)/
+	cp $(SDL2_MINGW)/bin/SDL2.dll $(WIN_DIST)/
+	cp LICENSE $(WIN_DIST)/LICENSE.txt
+	cp docs/HELP.md $(WIN_DIST)/
+	cd dist && zip -qr $(notdir $(WIN_DIST)).zip $(notdir $(WIN_DIST))
+	@echo "packaged dist/$(notdir $(WIN_DIST)).zip"
 
 clean:
-	rm -rf $(OBJ_DIR) $(TARGET) svpview.exe
+	rm -rf $(OBJ_DIR) $(TARGET) $(WIN_TARGET) dist

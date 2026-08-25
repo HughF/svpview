@@ -23,7 +23,6 @@
 #include <string.h>
 #include <stdarg.h>
 #include <math.h>
-#include <unistd.h>
 
 #define RX_CAP        (1 << 20)
 #define STEP_TIMEOUT   4000        /* ms for one command to answer       */
@@ -304,7 +303,7 @@ static void finish_download(SvApp *a)
             if (last == '>') {
                 fclose(a->dl_file);
                 a->dl_file = NULL;
-                if (truncate(a->dl_path, end - 1) == 0)
+                if (plat_file_truncate(a->dl_path, end - 1))
                     a->st.dl_bytes--;
             }
         }

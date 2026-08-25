@@ -54,6 +54,29 @@ itself if the pointer rests on it. The same text is [docs/HELP.md](docs/HELP.md)
 generated with `make help-doc` — the manual is a table in `src/sv_help.c`, so
 the page and the file cannot disagree.
 
+### Windows
+
+Cross-compiled from Linux with mingw-w64. Arch ships no mingw SDL2 package
+and no mingw `pkg-config`, so the SDL2 development SDK is unpacked into
+`tools/win/` instead of discovered:
+
+```sh
+sudo pacman -S --needed mingw-w64-gcc     # Debian/Ubuntu: apt install mingw-w64
+tools/win/get-sdl2.sh                     # unpacks the upstream SDL2 mingw SDK
+make windows                              # -> svpview.exe
+make windows-dist                         # -> dist/svpview-<version>-win64.zip
+```
+
+The zip is the deliverable: `svpview.exe`, `SDL2.dll`, the licence and the
+manual. Nothing else is needed on the target machine — libgcc is linked
+statically, and the executable carries its own icon, version stamp and a
+per-monitor DPI manifest so the interface scales rather than being
+bitmap-stretched. It links the UCRT, so Windows 10 or later; on 8.1 and
+earlier the Microsoft UCRT redistributable would be needed as well.
+
+`make windows` and `make` keep their objects apart, so switching between them
+does not relink one platform's objects into the other's binary.
+
 ## What it does
 
 **Instrument** — interrupt, identify, read every setting, return to run mode,

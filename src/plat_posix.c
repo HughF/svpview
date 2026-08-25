@@ -376,4 +376,9 @@ bool plat_path_join(char *buf, size_t cap, const char *dir, const char *leaf)
     return (size_t)snprintf(buf, cap, "%s/%s", dir, leaf) < cap;
 }
 
+bool plat_file_truncate(const char *path, long len)
+{
+    return truncate(path, (off_t)len) == 0;
+}
+
 #endif /* !_WIN32 */

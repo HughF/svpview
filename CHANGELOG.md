@@ -5,6 +5,44 @@ truth for release notes.
 
 ## [Unreleased]
 
+### Added — Windows build (2026-08-25)
+- `src/plat_win32.c`: the Windows half of `plat.h`, which had never been
+  written even though the Makefile already selected it. Serial ports come
+  from SetupAPI so they carry the name Windows shows — the difference between
+  "Standard Serial over Bluetooth link" and a USB serial port is the
+  difference between a cast that can get a GPS fix and one that cannot. The
+  port handle is opened with `ReadIntervalTimeout = MAXDWORD` and both total
+  timeouts zero, which is the documented equivalent of the POSIX side's
+  `O_NONBLOCK`, and every read clears the driver's latched error first —
+  otherwise one burst of line noise makes the instrument look dead for good.
+- Adapters come from `GetAdaptersAddresses`, connected ones only, with the
+  directed broadcast computed from the prefix length by the same arithmetic
+  the POSIX side uses on the mask.
+- The UDP socket disables `SIO_UDP_CONNRESET`. On Windows a UDP socket that
+  provokes an ICMP port-unreachable — exactly what a switched-off winch does
+  — fails every later receive with `WSAECONNRESET`, permanently, so the
+  acknowledgement would never be seen again once the winch came back.
+- `truncate()` moved behind `plat.h` as `plat_file_truncate()`. It was the
+  one POSIX call left above the platform layer, dropping the instrument's
+  trailing prompt byte from a download; Windows has no equivalent, and it is
+  `SetEndOfFile` there.
+- Cross-build from Linux: `make windows` and `make windows-dist`, with the
+  SDL2 mingw SDK fetched by `tools/win/get-sdl2.sh` (Arch has neither a mingw
+  SDL2 package nor a mingw `pkg-config`, which the old target assumed). The
+  Windows objects build in their own directory — the previous target shared
+  `build/` with the native one and would have linked host objects into the
+  executable.
+- The executable carries an icon, a version stamp read from `sv_version.h`,
+  and a per-monitor DPI manifest, without which Windows bitmap-stretches the
+  window on a high-DPI laptop and every trace comes out blurred. Linked
+  `-mwindows` so no console appears behind it, with `--help` and `--help-doc`
+  reattaching to the parent console so they still work from a command prompt.
+- The manual gained the two things that only bite on Windows: how to tell the
+  Bluetooth key from the comms cable in a list of COM ports, and Windows
+  Firewall silently blocking UDP 8090, which looks exactly like a winch that
+  is not listening.
+
+
 ### Added — tooltips on every control, and a manual (2026-08-24)
 - Every control that does something now says what it does when the pointer
   rests on it for 800 ms. The hint is written against the control, not the

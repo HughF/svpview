@@ -1,6 +1,6 @@
 # svpview — operator's manual
 
-Valeport SWiFT profiler acquisition and display, version 2026.08.24.
+Valeport SWiFT profiler acquisition and display, version 2026.08.25.
 
 This file is generated from the help built into the program:
 `svpview --help-doc > docs/HELP.md`, or `make help-doc`. Edit
@@ -40,6 +40,8 @@ Everything works offline. There is no basemap imagery, no tile server and no int
 ## Connecting to the instrument
 
 Both the USB comms cable and the Valeport Bluetooth key appear to the computer as serial ports, at 230400 baud, 8N1. Open Settings and press Connect... to see the ports the machine can offer; if the one you want is not listed, plug it in and press Rescan.
+
+On Windows the ports are COM numbers, listed with the name Windows knows them by — the Bluetooth key reads as "Standard Serial over Bluetooth link" and the cable as a USB serial port. That difference matters: the instrument switches its GPS off while the comms cable is connected, so a cast set up over the cable will never be ready to deploy. On Linux the same ports are /dev/ttyUSB and /dev/rfcomm names, and the account must be in the dialout group to open one.
 
 ### What the link state means
 
@@ -267,6 +269,7 @@ The close button in a dialog's title bar means Cancel, the same as Escape.
 | **Checksum failures climbing** | A bad cable, a flat Bluetooth key battery, or too much distance. |
 | **Casts missing from the chart** | They were logged without a GPS fix. The chart panel counts them. |
 | **Winch silent** | Wrong adapter, or the winch is not on this network. Probe it, then check the adapter. |
+| **Winch silent on Windows only** | Windows Firewall. The first broadcast raises a prompt, and a prompt answered with Cancel — or never shown, on a machine with the firewall locked down — blocks every depth report from then on, silently. Allow svpview on the private network, or add an outbound rule for UDP 8090. This looks exactly like a winch that is not listening. |
 | **Text too small or too large** | The interface scales itself to the display. Override it with the SVPVIEW_SCALE environment variable. |
 
 The Log page holds the conversation with the instrument, sent lines marked > and received lines <. It is the first thing to look at when something behaves oddly, and the first thing to quote in a fault report.

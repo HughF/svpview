@@ -106,4 +106,14 @@ bool plat_config_dir(char *buf, size_t cap);
 /* Join with the platform separator. False if it would not fit. */
 bool plat_path_join(char *buf, size_t cap, const char *dir, const char *leaf);
 
+/*
+ * Cut a closed file to `len` bytes. The instrument returns its command
+ * prompt at the end of a transfer and that byte is not part of the file, so
+ * the download drops it rather than carry a phantom truncated record.
+ *
+ * Here because the POSIX call has no Windows equivalent: truncate() against
+ * a path, _chsize_s() against an open descriptor.
+ */
+bool plat_file_truncate(const char *path, long len);
+
 #endif /* PLAT_H */

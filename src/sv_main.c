@@ -28,6 +28,30 @@
 #include "sv_version.h"
 #include "sv_help.h"
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+/*
+ * Reattach to the console that launched us, for --help and --help-doc.
+ *
+ * The Windows build is linked with -mwindows so that double-clicking it does
+ * not put an empty console behind the window. That also detaches the standard
+ * streams, so a program run from a command prompt writes its usage into
+ * nowhere. Borrowing the parent's console when there is one gives both: no
+ * console for the operator, output for whoever typed the command.
+ */
+static void attach_parent_console(void)
+{
+    if (!AttachConsole(ATTACH_PARENT_PROCESS))
+        return;
+    freopen("CONOUT$", "w", stdout);
+    freopen("CONOUT$", "w", stderr);
+}
+#else
+static void attach_parent_console(void) { }
+#endif
+
 /* The size the layout is designed for at UI scale 1. sv_ui_fit_window()
  * turns it into the actual opening size once the UI knows the display's
  * scale, so this is not what a HiDPI screen ends up with. */
@@ -57,14 +81,17 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "--open") == 0 && i + 1 < argc) {
             open_path = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0) {
+            attach_parent_console();
             usage();
             return 0;
         } else if (strcmp(argv[i], "--help-doc") == 0) {
+            attach_parent_console();
             /* Before SDL is touched, so docs/HELP.md can be regenerated on a
              * machine with no display. */
             sv_help_write_markdown(stdout, SVPVIEW_VERSION);
             return 0;
         } else {
+            attach_parent_console();
             fprintf(stderr, "svpview: unknown argument '%s'\n", argv[i]);
             usage();
             return 2;

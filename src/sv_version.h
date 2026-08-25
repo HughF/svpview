@@ -22,7 +22,7 @@
 #define SV_VERSION_H
 
 #define SVPVIEW_NAME    "svpview"
-#define SVPVIEW_VERSION "2026.08.24"
+#define SVPVIEW_VERSION "2026.08.25"
 #define SVPVIEW_TAGLINE "Valeport SWiFT profiler acquisition and display"
 
 #endif /* SV_VERSION_H */
