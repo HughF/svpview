@@ -6,6 +6,12 @@ truth for release notes.
 ## [Unreleased]
 
 ### Added — Windows build (2026-08-25)
+- Runs on Windows 11, confirmed on the day it was built, with both
+  enumerations working: serial ports list with the names Windows knows them
+  by, and network adapters list with their addresses and computed broadcast
+  addresses. What remains unproven there is the link itself — no SWiFT, no
+  Bluetooth key and no winch has yet been on the other end of a COM port or
+  of UDP 8090 on Windows.
 - `src/plat_win32.c`: the Windows half of `plat.h`, which had never been
   written even though the Makefile already selected it. Serial ports come
   from SetupAPI so they carry the name Windows shows — the difference between
