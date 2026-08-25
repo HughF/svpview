@@ -67,7 +67,7 @@ TESTS = test_ocean test_geo test_proto test_binfile test_vigo test_profile
 
 # ---------------------------------------------------------------------
 
-.PHONY: all clean test debug windows windows-dist run help-doc
+.PHONY: all clean test debug windows windows-dist appimage run help-doc
 
 all: $(TARGET)
 
@@ -213,6 +213,19 @@ $(WIN_OBJ):
 	@mkdir -p $(WIN_OBJ)
 
 -include $(WIN_OBJS:.o=.d)
+
+# ---------------------------------------------------------------------
+# Portable Linux binary
+#
+# Not a package but a glibc problem: a binary built on a rolling-release
+# machine binds symbol versions no stable distribution has, so it will not
+# start anywhere else. The script builds against Ubuntu 22.04's glibc inside
+# bubblewrap — no root, no container runtime — and wraps the result with
+# SDL2 in an AppImage. See tools/linux/make-appimage.sh.
+# ---------------------------------------------------------------------
+
+appimage:
+	tools/linux/make-appimage.sh
 
 windows-dist: $(WIN_TARGET) help-doc
 	@rm -rf $(WIN_DIST)

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=svpview
+GenericName=SWiFT profiler
+Comment=Valeport SWiFT profiler acquisition and display
+Exec=svpview
+Icon=svpview
+Terminal=false
+Categories=Science;Engineering;
+Keywords=SVP;CTD;sound velocity;profiler;Valeport;SWiFT;survey;

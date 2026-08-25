@@ -15,3 +15,6 @@ third_party/*.o
 tools/win/SDL2-*/
 tools/win/SDL2-devel-*.tar.gz
 dist/
+
+# The AppImage build unpacks a whole Ubuntu filesystem in here.
+tools/linux/.cache/

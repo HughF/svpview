@@ -36,14 +36,20 @@ platform layer but has never been tried.
 
 ## Download
 
-Windows binaries are attached to the
-[latest release](https://github.com/HughF/svpview/releases/latest): unzip, keep
-`SDL2.dll` beside the executable, run it. Nothing is installed and no
-administrator rights are needed.
+Both are attached to the
+[latest release](https://github.com/HughF/svpview/releases/latest).
 
-There is no Linux binary on purpose — one built on a rolling-release machine
-links a glibc newer than any stable distribution ships, so it would refuse to
-start. Build it instead; it takes one command and needs only SDL2.
+**Windows** — unzip, keep `SDL2.dll` beside the executable, run it. Nothing is
+installed and no administrator rights are needed. Windows 10 or later.
+
+**Linux** — download the AppImage, `chmod +x` it, run it. It carries its own
+SDL2 and its own font, so it needs nothing installed beyond the graphics
+stack the machine already has, and it works on glibc 2.34 and newer — Ubuntu
+22.04, Debian 12, RHEL 9, Fedora 35 and anything later. Building from source
+is still one command if you would rather (`make`, with SDL2 the only
+dependency); the AppImage exists because a binary built on a rolling-release
+machine links symbol versions no stable distribution has and refuses to
+start at all.
 
 ## Quick start
 

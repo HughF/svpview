@@ -2604,7 +2604,33 @@ SvUi *sv_ui_create(SDL_Window *win, SDL_Renderer *ren, SvApp *app)
     cfg.pixel_snap = 0;
 
     struct nk_font *font = NULL;
-    static const char *candidates[] = {
+
+    /*
+     * A face shipped beside the program is tried before the system's own.
+     *
+     * The fallback if none of these is found is Nuklear's built-in bitmap
+     * font, which is legible and looks nothing like the rest of the
+     * interface — and a machine with no fonts installed at all is not
+     * hypothetical: it is what a minimal container or a stripped appliance
+     * image looks like, and the AppImage exists to run on machines that are
+     * missing things. So the AppImage carries DejaVu Sans and finds it here,
+     * relative to the executable rather than by an absolute path, because an
+     * AppImage is mounted somewhere different every time it runs.
+     */
+    char bundled[2][SV_MAX_PATH];
+    bundled[0][0] = bundled[1][0] = '\0';
+
+    char *base = SDL_GetBasePath();
+    if (base) {
+        snprintf(bundled[0], sizeof bundled[0], "%sDejaVuSans.ttf", base);
+        snprintf(bundled[1], sizeof bundled[1],
+                 "%s../share/svpview/DejaVuSans.ttf", base);
+        SDL_free(base);
+    }
+
+    const char *candidates[] = {
+        bundled[0],
+        bundled[1],
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
@@ -2613,9 +2639,12 @@ SvUi *sv_ui_create(SDL_Window *win, SDL_Renderer *ren, SvApp *app)
         "C:\\Windows\\Fonts\\segoeui.ttf",
         NULL
     };
-    for (int i = 0; candidates[i] && !font; i++)
+    for (int i = 0; candidates[i] && !font; i++) {
+        if (!candidates[i][0])
+            continue;
         font = nk_font_atlas_add_from_file(atlas, candidates[i],
                                            14.0f * ui->scale, &cfg);
+    }
     nk_sdl_font_stash_end();
 
     if (font)

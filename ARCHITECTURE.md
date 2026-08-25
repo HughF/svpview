@@ -399,12 +399,16 @@ has never been compiled, let alone run, and should be treated as unproven.
   broadcast themselves, `(ip & mask) | ~mask`, rather than take the OS's
   word for it.
 - **Fonts:** the original plan was SDL2_ttf with a vendored face. What was
-  built instead is Nuklear's own font baking against a list of candidate
-  *system* paths — DejaVu Sans, Helvetica, Segoe UI — falling back to
-  Nuklear's built-in bitmap font if none is found. That fallback is legible
-  but poor, so a machine with none of the candidates gets a visibly worse
-  interface. Vendoring a face would remove the last thing about the program
-  that varies by machine; it has not been done.
+  built instead is Nuklear's own font baking, which looks first for a face
+  shipped beside the executable (found through `SDL_GetBasePath`, because an
+  AppImage is mounted somewhere different every run) and then at a list of
+  candidate system paths — DejaVu Sans, Helvetica, Segoe UI. If none is
+  found it falls back to Nuklear's built-in bitmap font, which is legible and
+  looks nothing like the rest of the interface. That is not hypothetical: a
+  minimal image has no fonts at all, and the first AppImage built here came
+  out in the bitmap face when it was tested on a bare Ubuntu filesystem. The
+  AppImage therefore carries DejaVu Sans. Windows and macOS builds still use
+  the system face, which on those platforms is always present.
 - **Paths:** UTF-8 internally, but the Windows platform layer calls the ANSI
   entry points (`CreateFileA`, `RegQueryValueExA`) rather than converting to
   UTF-16 at the boundary as originally intended. A path containing characters

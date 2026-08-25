@@ -9,12 +9,41 @@ Nothing yet.
 
 ## [2026.08.25] — first release
 
-Tagged and published as `2026.08.25`. Windows binaries are attached to the
-GitHub release; Linux builds from source with `make` and needs only SDL2.
+Tagged and published as `2026.08.25`, with a Windows zip and a Linux AppImage
+attached to the GitHub release.
 
 Simulator-proven, not sea-proven: no SWiFT instrument and no Vigo winch has
 been on the other end of anything in this release. See §11 of the design
 document for the row-by-row position.
+
+### Added — portable Linux binary, as an AppImage (2026-08-25)
+- The problem was never packaging, it was glibc. A binary built on this
+  rolling-release machine binds `cfsetispeed@GLIBC_2.42` and
+  `sqrtf@GLIBC_2.43`; symbol versions are chosen by the linker against the
+  host's libc, so no amount of source-level care avoids it and the binary
+  refuses to start on every stable distribution there is. `make appimage`
+  builds against Ubuntu 22.04's glibc instead — inside bubblewrap, needing
+  neither root nor a container runtime, only unprivileged user namespaces.
+  The result runs on glibc 2.34 and newer: Ubuntu 22.04, Debian 12, RHEL 9,
+  Fedora 35 and later.
+- SDL2 is built from source rather than taken from the distribution. Debian
+  and Ubuntu link every backend directly, so their libSDL2 carries hard
+  dependencies on nineteen X11, Wayland, DRM and audio libraries —
+  `libdecor-0.so.0` among them, which plenty of machines do not have. The
+  loader resolves all of those before `main()` runs, so one missing library
+  and the program does not start, which is the exact failure an AppImage
+  exists to prevent. Built with the `*-shared` options as upstream intends
+  for redistribution, it has two direct dependencies and opens the rest with
+  `dlopen` when it needs them.
+- The AppImage carries DejaVu Sans. The first build came out in Nuklear's
+  built-in bitmap font when it was tested on a bare Ubuntu filesystem — no
+  fonts installed, nothing for the system-path search to find, which is
+  precisely the kind of machine an AppImage gets carried onto. The font
+  search now looks beside the executable first, via `SDL_GetBasePath` because
+  an AppImage is mounted somewhere different every run.
+- Verified by running it inside that Ubuntu 22.04 filesystem with the
+  distribution's SDL2 removed: the window opens, the simulator connects, and
+  the interface is identical to the native build.
 
 ### Added — Windows build (2026-08-25)
 - Runs on Windows 11, confirmed on the day it was built, with both
