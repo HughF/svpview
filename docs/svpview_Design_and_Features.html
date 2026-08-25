@@ -124,7 +124,7 @@
   <ol>
     <li><span class="t">What it is</span><span class="d">scope, and the one thing it deliberately does not do</span></li>
     <li><span class="t">Design intent</span><span class="d">seven rules the code is held to</span></li>
-    <li><span class="t">The screen</span><span class="d">six pages, with what each is for</span></li>
+    <li><span class="t">The screen</span><span class="d">seven pages, with what each is for</span></li>
     <li><span class="t">The chart</span><span class="d">where the casts were, and the precision of saying so</span></li>
     <li><span class="t">Talking to the instrument</span><span class="d">the session, and four protocol findings that cost time</span></li>
     <li><span class="t">Oceanography</span><span class="d">the equations, and the numbers they were checked against</span></li>
@@ -301,14 +301,30 @@
     back mid&#8209;read makes the page useless during a download, which is exactly when it is needed.</figcaption>
   </figure>
 
-  <h3>3.8&nbsp;&nbsp;Themes, and knowing which build you are looking at</h3>
+  <h3>3.8&nbsp;&nbsp;Help</h3>
+  <p>The manual is in the program, on the rail and on <b>F1</b>. A survey vessel has no internet, and a
+  question asked at the rail at 0300 cannot wait for a support call &mdash; so the answer travels with the
+  executable. Every control also carries a hint: rest the pointer on one for eight hundred milliseconds and it
+  says what it does, and what it says changes when the control is disabled, so a greyed&#8209;out button
+  explains itself rather than simply refusing.</p>
+
+  <figure>
+    <img src="img/help.png" alt="svpview Help page showing the built-in manual">
+    <figcaption><b>Figure 5.</b> The <b>Help</b> page. The text column is capped rather than run to the width
+    of the window, because a paragraph dragged across a wide screen is measurably harder to read. This is the
+    same text as <code>docs/HELP.md</code> &mdash; both are rendered from one table in <code>sv_help.c</code>,
+    the page by drawing it and the file by <code>svpview --help-doc</code>, so a control cannot be renamed in
+    one and left stale in the other.</figcaption>
+  </figure>
+
+  <h3>3.9&nbsp;&nbsp;Themes, and knowing which build you are looking at</h3>
   <p>Dark and light come from one role&#8209;based palette table, so a widget never hard&#8209;codes an RGB value
   and the two themes cannot drift apart. Same layout, same metrics, one word changed on the button that switches
   them.</p>
 
   <figure>
     <img src="img/chart_light.png" alt="The chart page in the light theme">
-    <figcaption><b>Figure 5.</b> The light theme, on the same page as Figure&nbsp;7. Nothing about the layout
+    <figcaption><b>Figure 6.</b> The light theme, on the same page as Figure&nbsp;8. Nothing about the layout
     changes &mdash; only the palette, addressed by role: <span class="mono">panel</span>,
     <span class="mono">plot_grid</span>, <span class="mono">text_dim</span>, <span class="mono">accent</span>.
     A deck in sunlight and a dark bridge at 3&nbsp;a.m. are different rooms.</figcaption>
@@ -326,7 +342,7 @@
     <div>
       <figure style="margin-top:0">
         <img src="img/about_dialog.png" alt="svpview About dialog">
-        <figcaption><b>Figure 6.</b> About &mdash; one OK button, because Apply and Cancel have nothing to act on
+        <figcaption><b>Figure 7.</b> About &mdash; one OK button, because Apply and Cancel have nothing to act on
         in a dialog that changes nothing. The licence notice is here because that is where the GPL&rsquo;s own
         &ldquo;How to Apply&rdquo; section asks a program with a GUI to put it.</figcaption>
       </figure>
@@ -340,7 +356,7 @@
 
   <figure>
     <img src="img/chart.png" alt="svpview Chart page: cast markers, vessel track, graticule and scale bar">
-    <figcaption><b>Figure 7.</b> The <b>Chart</b> page. Cast markers with their time and maximum depth, the track
+    <figcaption><b>Figure 8.</b> The <b>Chart</b> page. Cast markers with their time and maximum depth, the track
     the instrument has been broadcasting, a graticule on whole minutes and seconds, a scale bar and a north arrow.
     The panel gives the live position, the track point count, and every cast&rsquo;s range from where the vessel
     is now. Drag pans, the wheel zooms about the cursor, a click selects the cast under it &mdash; and the Profile
@@ -513,7 +529,7 @@
 
   <figure>
     <img src="img/winch.png" alt="svpview Settings page, winch depth reporting section">
-    <figcaption><b>Figure 8.</b> The winch section of the <b>Settings</b> page: which adapter is in use, the
+    <figcaption><b>Figure 9.</b> The winch section of the <b>Settings</b> page: which adapter is in use, the
     broadcast address that follows from it, what was last sent, and the three actions. &ldquo;Report selected cast
     depth&rdquo; is the only button in the program that sends a depth, and it names what it will
     send.</figcaption>
@@ -522,7 +538,7 @@
   <h3>8.2&nbsp;&nbsp;Which adapter, and the broadcast address</h3>
   <figure>
     <img src="img/network_dialog.png" alt="svpview network adapter picker listing connected adapters with address, mask and broadcast">
-    <figcaption><b>Figure 9.</b> The adapter picker lists only <em>connected</em> broadcast&#8209;capable adapters
+    <figcaption><b>Figure 10.</b> The adapter picker lists only <em>connected</em> broadcast&#8209;capable adapters
     &mdash; up, running and holding an address &mdash; with the address, mask and the broadcast that will actually
     be used, and binds the winch socket to the chosen one.</figcaption>
   </figure>
@@ -645,8 +661,17 @@
         <td><span class="pill hw">needs hardware</span></td>
         <td>ROADMAP phase 7 &mdash; ten consecutive operator&#8209;commanded casts, with induced failures</td></tr>
     <tr><td>Windows build</td>
-        <td><span class="pill no">outstanding</span></td>
-        <td><code>plat_win32.c</code> is not written, so <code>make windows</code> does not link yet</td></tr>
+        <td><span class="pill done">runs</span></td>
+        <td>cross&#8209;built with mingw&#8209;w64 and run on Windows&nbsp;11; serial&#8209;port and network&#8209;adapter
+            enumeration both confirmed there. The link itself is as untested on Windows as it is anywhere
+            else &mdash; no instrument on a COM port, no winch on UDP&nbsp;8090</td></tr>
+    <tr><td>macOS build</td>
+        <td><span class="pill no">untried</span></td>
+        <td>expected to work through the same POSIX platform file, never compiled</td></tr>
+    <tr><td>Help and tooltips</td>
+        <td><span class="pill done">done</span></td>
+        <td>every control carries a hint; the manual is in the program (F1) and is the same text as
+            <code>docs/HELP.md</code>, both rendered from one table in <code>sv_help.c</code></td></tr>
     <tr><td><code>.vpd</code> reading, batch download, auto&#8209;export</td>
         <td><span class="pill no">not yet</span></td>
         <td>planned, unimplemented</td></tr>
@@ -672,11 +697,25 @@
 make                  <span class="c"># ./svpview</span>
 make test             <span class="c"># every suite, ASan + UBSan</span>
 make debug            <span class="c"># sanitised build of the application itself</span>
-make windows          <span class="c"># mingw-w64 cross-build (needs plat_win32.c)</span>
+make help-doc         <span class="c"># regenerate docs/HELP.md from the built-in manual</span>
+
+<span class="c"># Windows, cross-compiled from Linux. Arch has neither a mingw SDL2 package</span>
+<span class="c"># nor a mingw pkg-config, so the SDK is unpacked rather than discovered.</span>
+sudo pacman -S --needed mingw-w64-gcc   <span class="c"># Debian/Ubuntu: apt install mingw-w64</span>
+tools/win/get-sdl2.sh                   <span class="c"># unpack the upstream SDL2 mingw SDK</span>
+make windows                            <span class="c"># -&gt; svpview.exe</span>
+make windows-dist                       <span class="c"># -&gt; dist/svpview-&lt;version&gt;-win64.zip</span>
 
 ./svpview --sim              <span class="c"># run against the emulated instrument</span>
 ./svpview --open cast.bin    <span class="c"># load a logged file</span>
+./svpview --help-doc         <span class="c"># write the manual to stdout as Markdown</span>
 SVPVIEW_SCALE=1 ./svpview    <span class="c"># override the detected HiDPI scale</span></pre>
+
+  <p>The Windows deliverable is the zip: <code>svpview.exe</code>, <code>SDL2.dll</code>, the licence and the
+  manual. Nothing else is needed on the target machine &mdash; libgcc is linked statically and the executable
+  carries its own icon, a version stamp read from <code>sv_version.h</code>, and a per&#8209;monitor DPI
+  manifest, without which Windows bitmap&#8209;stretches the window on a high&#8209;DPI laptop and every trace
+  comes out blurred. It links the UCRT, so Windows&nbsp;10 or later.</p>
 
   <p>Nuklear is vendored in <code>third_party/</code>. There is nothing else to fetch, and no network access is
   required to build or to run.</p>
@@ -687,6 +726,7 @@ SVPVIEW_SCALE=1 ./svpview    <span class="c"># override the detected HiDPI scale
     <tr><td class="mono">ARCHITECTURE.md</td><td>layers, threading rationale, crash&#8209;resistance, known unknowns</td></tr>
     <tr><td class="mono">ROADMAP.md</td><td>nine phases with what is done and what needs hardware</td></tr>
     <tr><td class="mono">LICENSE</td><td>GNU General Public License v3 &mdash; the whole program is under it</td></tr>
+    <tr><td class="mono">docs/HELP.md</td><td>the operator&rsquo;s manual &mdash; generated from <code>src/sv_help.c</code>, which is also what the Help page draws</td></tr>
     <tr><td class="mono">third_party/README.md</td><td>what is vendored, its licences, and the one local fix carried against upstream</td></tr>
     <tr><td class="mono">CHANGELOG.md</td><td>the source of truth for release notes, including the bugs found during bring&#8209;up</td></tr>
     <tr><td class="mono">docs/SWIFT_PROTOCOL.md</td><td>commands, sentences, the binary header variants</td></tr>

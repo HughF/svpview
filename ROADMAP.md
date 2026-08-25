@@ -18,7 +18,8 @@ Build system, platform layer stubs, window that opens and closes cleanly.
 
 - `Makefile` with `uname` platform detect, release/debug/asan targets
 - `plat_time.c`, `plat_path.c`
-- SDL2 + SDL2_ttf + vendored `nuklear.h`, HiDPI logical-size setup
+- SDL2 + vendored `nuklear.h`, HiDPI logical-size setup (SDL2_ttf was
+  planned and proved unnecessary — Nuklear bakes its own atlas)
 - `make test` harness with one trivial test
 - CI: build + test on Linux, mingw-w64, macOS
 
@@ -140,7 +141,15 @@ safely and is logged.
 - Watchdog, autosave, crash-log-on-exit
 - Soak test: 24 h continuous mode with periodic download
 - README, operator guide, `CHANGELOG.md` promoted to a dated release
-- Windows and macOS builds smoke-tested on real machines
+- ~~Operator guide~~ **done** — `src/sv_help.c` is the manual, drawn by the
+  Help page (F1) and written out as `docs/HELP.md` by `--help-doc`; every
+  control also carries a tooltip
+- ~~Windows build smoke-tested on a real machine~~ **done 2026-08-25** —
+  cross-built with mingw-w64, run on Windows 11, serial-port and adapter
+  enumeration both confirmed there. The link itself is still untested on
+  Windows, as it is everywhere else
+- macOS build smoke-tested on a real machine — **not started**, never
+  compiled
 
 ---
 

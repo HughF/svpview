@@ -27,7 +27,12 @@ real instrument and no real winch have been connected yet. See
 [ROADMAP.md](ROADMAP.md) phases 2, 3, 6 and 7, and §11 of the design document
 for a plain table of what is proven against what is not.
 
-`plat_win32.c` is not written, so `make windows` does not link yet.
+**Linux and Windows both build and run.** The Windows executable is
+cross-compiled from Linux and has been run on Windows 11, where serial-port
+and network-adapter enumeration both work. What is unproven there is the same
+thing that is unproven on Linux — the link itself: no instrument on a COM
+port, no winch on UDP 8090. macOS is expected to build against the same POSIX
+platform layer but has never been tried.
 
 ## Quick start
 
@@ -144,10 +149,12 @@ src/        sv_ui sv_plot sv_chart sv_theme      UI (SDL2 + Nuklear)
             sv_app sv_sim                       application and emulator
             sv_ocean sv_geo sv_proto sv_binfile  portable core: no SDL, no I/O
             sv_profile sv_export sv_vigo sv_config
-            plat_posix                          everything OS-specific
+            sv_help                             the manual, as data
+            plat_posix plat_win32               everything OS-specific
 tests/      one suite per core module, always sanitised
 third_party/ nuklear.h and its SDL renderer, vendored
-docs/       protocol notes, the design document, screenshots
+tools/win/  the Windows cross-build: icon, resources, SDL2 SDK fetcher
+docs/       protocol notes, the design document, the manual, screenshots
 ```
 
 The core knows nothing about SDL and does no I/O, which is what makes it

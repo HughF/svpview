@@ -28,12 +28,12 @@ winch's own web UI and physical panel, exactly as they are today. See §7.
 
 | Requirement | How it is met |
 |---|---|
-| 1. SDL2 | SDL2 + SDL2_ttf for window/input/text. Nuklear (single-header, vendored) for widgets — same stack as `cm2view` |
+| 1. SDL2 | SDL2 for window, input and rendering. Nuklear (single-header, vendored) for widgets and for text, which it bakes into its own atlas — SDL2_ttf was in the original plan and turned out not to be needed. Same stack as `cm2view` |
 | 2. Cross-platform | All OS-specific code behind `plat_*.h` (serial, sockets, paths, time). No OS calls above that line |
 | 3. Ocean feature parity | §3 feature inventory, tracked as an explicit checklist in ROADMAP.md |
 | 4. Modern design | One-window, dark-first theme, no modal-dialog maze; live plot always visible; §8 |
 | 5. Isn't rubbish | Portable core is UI-free and unit-tested headless; the whole instrument protocol is driven by an explicit FSM, not by sleeps and string matching |
-| 6. Doesn't crash | §9 — no allocation in the render loop, bounded buffers everywhere, every parser fuzzed, ASan/UBSan in CI, no untrusted-length trust in the binary file reader |
+| 6. Doesn't crash | §9 — no allocation in the render loop, bounded buffers everywhere, every parser fuzzed, ASan/UBSan under `make test`, no untrusted-length trust in the binary file reader |
 
 ---
 
@@ -129,13 +129,13 @@ not be rubbish.
 The table below is what exists. The original plan split the app layer into
 `sv_session.c` / `sv_cast.c` and the UI into one `sv_pages_*.c` per page; both
 were consolidated during implementation because the split was costing more
-plumbing than it bought. `sv_vpd.c` and `plat_win32.c` are planned and not yet
-written.
+plumbing than it bought. `sv_vpd.c` is planned and not yet written; everything
+else in the table exists.
 
 | File | Layer | Responsibility |
 |---|---|---|
 | `sv_main.c` | ui | SDL init, event pump, frame loop, teardown |
-| `sv_ui.c` | ui | Nuklear context, layout shell, all six pages, all dialogs |
+| `sv_ui.c` | ui | Nuklear context, layout shell, all seven pages, all dialogs, the tooltip layer |
 | `sv_plot.c` | ui | Profile and live time-series plots |
 | `sv_chart.c` | ui | Cast positions in plan: graticule, track, scale bar |
 | `sv_theme.c` | ui | Palette by role, light/dark, HiDPI metrics |
@@ -149,7 +149,9 @@ written.
 | `sv_export.c` | core | Export writers, atomic via temp file and rename |
 | `sv_vigo.c` | core | Profiler UDP message codec: `Q` / `V` / `F` build, reply match |
 | `sv_config.c` | core | Settings file read/write |
-| `plat_posix.c` | plat | Serial, UDP, adapter enumeration, paths, monotonic time |
+| `sv_help.c` | core | The manual as a table, rendered by the Help page and by `--help-doc` |
+| `plat_posix.c` | plat | Linux and macOS: serial, UDP, adapter enumeration, paths, time |
+| `plat_win32.c` | plat | The same for Windows: SetupAPI, Winsock, `GetAdaptersAddresses` |
 
 Naming and layout follow `cm2view` and `sfview` so the three programs stay
 readable as a set.
@@ -360,29 +362,60 @@ flaky Bluetooth link must be an error message, not a segfault.
   and test builds.
 - Unit tests are plain C binaries per module (`tests/test_proto.c`, etc.),
   run by `make test` — the `cm2view` pattern.
-- GitHub Actions: build + test + fuzz-smoke on Linux, Windows (mingw-w64) and
-  macOS on every push.
+- **Planned, not built:** GitHub Actions running build, test and fuzz-smoke on
+  Linux, Windows and macOS per push. There is no workflow in the repository
+  today; `make test` is run by hand, and the Windows build is cross-compiled
+  by hand with `make windows`.
 
 ---
 
 ## 10. Cross-platform strategy
 
-- **Build:** one `Makefile` with `uname`-based platform detection; Windows via
-  mingw-w64 cross-compile from Linux, which is the same toolchain CI uses.
-  MSVC is not a target — nothing here needs it.
-- **Serial:** `plat_serial` is ~120 lines per platform. termios (Linux/macOS)
-  and `CreateFile`/`SetCommState` (Windows). Enumeration differs per platform
-  and is the only genuinely fiddly part: `/dev/serial/by-id`, `SetupDiGetClassDevs`,
-  `IOKit`.
-- **Sockets:** BSD sockets; Winsock differs only in startup and `closesocket`,
-  handled by three macros.
-- **Fonts:** SDL2_ttf with a vendored DejaVu Sans — no system font lookup, so
-  the program looks identical on all three platforms and cannot fail to start
-  because a font is missing.
-- **Paths:** UTF-8 everywhere internally; converted to UTF-16 at the Win32
-  boundary only.
+Linux and Windows are both built and run. macOS is expected to work through
+the same POSIX platform file — the serial enumeration already looks for
+`cu.usbserial` and `cu.usbmodem`, and the font search for Helvetica — but it
+has never been compiled, let alone run, and should be treated as unproven.
 
-Dependencies, complete: SDL2, SDL2_ttf, and vendored `nuklear.h`. Nothing else.
+- **Build:** one `Makefile`, `uname`-based for the native build; Windows is a
+  mingw-w64 cross-compile from Linux (`make windows`, `make windows-dist`).
+  MSVC is not a target — nothing here needs it. The two builds keep their
+  objects in separate directories, because sharing one links host objects
+  into the executable and the failures look like source errors.
+- **Serial:** two full implementations rather than one with `#ifdef`s —
+  termios against a non-blocking descriptor, and `CreateFile` with
+  `SetCommState` plus `ReadIntervalTimeout = MAXDWORD` and zero total
+  timeouts, which is the documented Windows equivalent of `O_NONBLOCK`.
+  Enumeration is the fiddly part and is entirely different on each:
+  `/dev/serial/by-id` symlinks, and SetupAPI's friendly names with the
+  registry's `SERIALCOMM` map as a backstop.
+- **Sockets:** BSD sockets both sides. The differences turned out to be more
+  than startup and `closesocket`: Windows needs `SIO_UDP_CONNRESET` switched
+  off, or a socket that provokes one ICMP port-unreachable — a winch that is
+  switched off — fails every later receive permanently. That is a behaviour
+  difference, not a spelling one, which is why the platform files are
+  separate rather than macro-bridged.
+- **Adapter enumeration:** `getifaddrs` against `ifa_netmask`, and
+  `GetAdaptersAddresses` against a prefix length. Both compute the directed
+  broadcast themselves, `(ip & mask) | ~mask`, rather than take the OS's
+  word for it.
+- **Fonts:** the original plan was SDL2_ttf with a vendored face. What was
+  built instead is Nuklear's own font baking against a list of candidate
+  *system* paths — DejaVu Sans, Helvetica, Segoe UI — falling back to
+  Nuklear's built-in bitmap font if none is found. That fallback is legible
+  but poor, so a machine with none of the candidates gets a visibly worse
+  interface. Vendoring a face would remove the last thing about the program
+  that varies by machine; it has not been done.
+- **Paths:** UTF-8 internally, but the Windows platform layer calls the ANSI
+  entry points (`CreateFileA`, `RegQueryValueExA`) rather than converting to
+  UTF-16 at the boundary as originally intended. A path containing characters
+  outside the machine's active code page will therefore fail to open. No
+  operator has hit this — export folders are chosen by the operator and the
+  instrument's own filenames are ASCII — but it is a real limit and the fix
+  is a conversion layer in `plat_win32.c`, not a change above it.
+
+Dependencies, complete: SDL2 and vendored `nuklear.h`. Nothing else. The
+Windows build additionally links `ws2_32`, `iphlpapi`, `setupapi` and `uuid`,
+all of which ship with the operating system.
 
 ---
 
