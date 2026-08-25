@@ -34,6 +34,17 @@ thing that is unproven on Linux — the link itself: no instrument on a COM
 port, no winch on UDP 8090. macOS is expected to build against the same POSIX
 platform layer but has never been tried.
 
+## Download
+
+Windows binaries are attached to the
+[latest release](https://github.com/HughF/svpview/releases/latest): unzip, keep
+`SDL2.dll` beside the executable, run it. Nothing is installed and no
+administrator rights are needed.
+
+There is no Linux binary on purpose — one built on a rolling-release machine
+links a glibc newer than any stable distribution ships, so it would refuse to
+start. Build it instead; it takes one command and needs only SDL2.
+
 ## Quick start
 
 ```sh
