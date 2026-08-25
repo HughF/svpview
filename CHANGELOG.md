@@ -5,6 +5,17 @@ truth for release notes.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [2026.08.25] — first release
+
+Tagged and published as `2026.08.25`. Windows binaries are attached to the
+GitHub release; Linux builds from source with `make` and needs only SDL2.
+
+Simulator-proven, not sea-proven: no SWiFT instrument and no Vigo winch has
+been on the other end of anything in this release. See §11 of the design
+document for the row-by-row position.
+
 ### Added — Windows build (2026-08-25)
 - Runs on Windows 11, confirmed on the day it was built, with both
   enumerations working: serial ports list with the names Windows knows them
