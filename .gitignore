@@ -18,3 +18,7 @@ dist/
 
 # The AppImage build unpacks a whole Ubuntu filesystem in here.
 tools/linux/.cache/
+
+# macOS build: the private universal SDL2 and the two per-architecture builds
+build-mac-deps/
+build-mac/
