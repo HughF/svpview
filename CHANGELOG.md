@@ -5,7 +5,15 @@ truth for release notes.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- Checkboxes and drop-down arrows have the CM Acquire look.
+  A checkbox is a rounded box with a thin outline, an accent outline on
+  hover, and a solid accent fill with a drawn tick when ticked (the tick is
+  dark on a light accent, white on a dark one). A drop-down's arrow is a
+  thin chevron instead of a solid triangle. The drawing is in
+  `nk_draw_checkbox` and `nk_draw_symbol` in `third_party/nuklear.h`; the
+  sizes and colours are set in the theme.
 
 ## [2026.08.25] — first release
 
